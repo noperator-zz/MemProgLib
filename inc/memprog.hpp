@@ -77,8 +77,9 @@ protected:
 	virtual void Init() {}
 
 	virtual bool CMD_START_QUERY_CAP() {
-		Param.P1 = BufferSize;
-		Param.P2 = NumBuffers;
+		Param.P1 = (uint32_t)Buffer;
+		Param.P2 = BufferSize;
+		Param.P3 = NumBuffers;
 		return true;
 	}
 	virtual bool CMD_CONTINUE_QUERY_CAP() {return true;}
