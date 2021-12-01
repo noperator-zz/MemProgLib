@@ -20,7 +20,7 @@ SET(CMAKE_CXX_FLAGS "${COMMON_FLAGS} -Wno-volatile -Wno-register -fno-rtti -fno-
 SET(CMAKE_EXE_LINKER_FLAGS "-Wl,--gc-sections,-Map,\"${PROJECT_NAME}.map\"")
 
 add_executable(memprog_lib
-        inc/memprog.h inc/memprog.hpp test/test.cpp)
+        memprog.h memprog.hpp test/test.cpp)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND nm -C -l -n -S CMakeFiles/memprog_lib.dir/src/memprog.cpp.obj > ${PROJECT_NAME}.sym)
