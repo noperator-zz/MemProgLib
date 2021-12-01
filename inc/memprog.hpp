@@ -14,9 +14,9 @@ protected:
 
 public:
 	MemProg(uint32_t Interface, volatile MEMPROG_PARAM & Param, volatile uint8_t * Buffer,
-			uint32_t BufferSize, uint32_t NumBuffers, uint32_t AddressOffset=0) :
+			uint32_t BufferSize, uint32_t NumBuffers) :
 			Interface(Interface), Param(Param),	Buffer(Buffer), BufferSize(BufferSize),
-			NumBuffers(NumBuffers), AddressOffset(AddressOffset), Status(MEMPROG_STATUS_OK), Code(0),
+			NumBuffers(NumBuffers), Status(MEMPROG_STATUS_OK), Code(0),
 			CurrentCommandInfo(nullptr)
 			{
 				Param.Status = MEMPROG_STATUS_OK;
@@ -68,7 +68,6 @@ protected:
 	volatile uint8_t * Buffer;
 	uint32_t BufferSize;
 	uint32_t NumBuffers;
-	uint32_t AddressOffset;
 
 	MEMPROG_STATUS Status;
 	uint32_t Code;
