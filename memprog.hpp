@@ -13,11 +13,10 @@ protected:
 	};
 
 public:
-	MemProg(uint32_t Interface, volatile MEMPROG_PARAM & Param, volatile uint8_t * Buffer,
+	MemProg(uint32_t Interface, volatile MEMPROG_PARAM & Param, const volatile uint8_t * Buffer,
 			uint32_t BufferSize, uint32_t NumBuffers) :
 			Interface(Interface), Param(Param),	Buffer(Buffer), BufferSize(BufferSize),
-			NumBuffers(NumBuffers), Status(MEMPROG_STATUS_OK), Code(0),
-			CurrentCommandInfo(nullptr)
+			NumBuffers(NumBuffers), CurrentCommandInfo(nullptr), Status(MEMPROG_STATUS_OK), Code(0)
 			{
 				Param.Status = MEMPROG_STATUS_OK;
 			}
@@ -61,17 +60,31 @@ public:
 		}
 	}
 
+	void Inspect(MEMPROG_CMD & CurrentCommand, MEMPROG_STATUS &CurrentStatus, uint32_t &CurrentCode) {
+		if (CurrentCommandInfo) {
+			CurrentCommand = CurrentCommandInfo->Command;
+		} else {
+			CurrentCommand = MEMPROG_CMD_NONE;
+		}
+
+		CurrentStatus = Status;
+		CurrentCode = Code;
+	}
+
+private:
+	const uint32_t Interface;
+	volatile MEMPROG_PARAM & Param;
+	const volatile uint8_t * Buffer;
+	const uint32_t BufferSize;
+	const uint32_t NumBuffers;
+
+	CMD_INFO * CurrentCommandInfo;
 
 protected:
-	uint32_t Interface;
-	volatile MEMPROG_PARAM & Param;
-	volatile uint8_t * Buffer;
-	uint32_t BufferSize;
-	uint32_t NumBuffers;
-
 	MEMPROG_STATUS Status;
 	uint32_t Code;
-	CMD_INFO * CurrentCommandInfo;
+
+	volatile MEMPROG_PARAM & GetParam() { return Param; }
 
 	virtual void Init() {}
 
