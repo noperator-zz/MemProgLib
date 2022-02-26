@@ -38,12 +38,10 @@ public:
 					Status = MEMPROG_STATUS_ERR_PARAM;
 					Done = true;
 				} else {
-//				Done = CurrentCommandInfo->Start == nullptr || (this->*CurrentCommandInfo->Start)();
 					Done = (this->*CurrentCommandInfo->Start)();
 				}
 			}
 		} else {
-//		Done = CurrentCommandInfo->Continue == nullptr || (this->*CurrentCommandInfo->Continue)();
 			Done = (this->*CurrentCommandInfo->Continue)();
 		}
 
@@ -54,6 +52,8 @@ public:
 				// Busy is a special status that causes OpenOCD to wait. It cannot be used as a final
 				//  return status. This indicates a problem in one of the command functions.
 				Status = MEMPROG_STATUS_ERR_OTHER;
+				// Modify `Code` to indicate that this occurred
+				Code |= 0x00800000;
 			}
 			Param.Code = Code & 0x00FFFFFF;
 			Param.Status = Status;

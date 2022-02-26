@@ -13,8 +13,7 @@ typedef enum {
 	MEMPROG_STATUS_ERR_OTHER            = 0xFF,
 } MEMPROG_STATUS;
 
-// NOTE: Make sure to update MemProg::COMMAND_KEY_MAP and MemProg::COMMAND_MAP
-//  when changing the MEMPROG_CMD enum
+// NOTE: Make sure to update MemProg::COMMAND_MAP when changing the MEMPROG_CMD enum
 typedef enum {
 	MEMPROG_CMD_NONE                    = 0x00000000,
 	MEMPROG_CMD_QUERY_CAP               = 0x00000001,
