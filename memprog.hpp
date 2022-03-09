@@ -14,12 +14,12 @@ public:
 	}
 	virtual ~MemProg() = default;
 
+	virtual void Init() {}
+
 private:
 	inline bool _CMD_DEFAULT() {
 		return true;
 	}
-
-	virtual void Init() {}
 
 	virtual bool CMD_START_QUERY_CAP() {
 		Param.P1 = (uint32_t)Buffer;
