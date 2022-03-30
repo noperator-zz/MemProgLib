@@ -47,11 +47,18 @@ typedef enum {
 } MEMPROG_OOCD_FLAG;
 
 
-/// Command execution status. Host will set this to BUSY when it wants to execute a new command.
-/// Target will change it to another value when finished the command.
 typedef enum __attribute__((__packed__)) {
-	MEMPROG_STATUS_OK                   = 0x00,
-	MEMPROG_STATUS_BUSY                 = 0x01,
+	// Indicates that any interface is free to overwrite the params (assuming they hold the token of course)
+	MEMPROG_STATUS_IDLE                 = 0x00,
+	// Set by the host to indicate to the target that params hold information about a new command
+	// The target will set it back to IDLE after copying necessary data from params
+	MEMPROG_STATUS_START                = 0x01,
+
+	// All other status codes are set by the command handlers upon completion of a command. They indicate
+	// to the host that the command is complete and return data should be read out.
+	// The host will set it back to IDLE after copying necessary data from params
+
+	MEMPROG_STATUS_OK                   = 0x7F,
 
 	MEMPROG_STATUS_ERR_PARAM            = 0x80,
 	MEMPROG_STATUS_ERR_EXECUTION        = 0x81,
@@ -76,8 +83,10 @@ typedef enum __attribute__((__packed__)) {
 } MEMPROG_CMD;
 
 typedef enum __attribute__((__packed__)) {
+	// Host is allowed to modify params and BDTs
 	MEMPROG_TOKEN_HOST                  = 0x00,
-	MEMPROG_TOKEN_TARGET                = 0x01,
+	// Target is allowed to modify params and BDTs
+	MEMPROG_TOKEN_TARGET                = 0x80,
 } MEMPROG_TOKEN;
 
 //typedef struct {
