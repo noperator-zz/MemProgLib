@@ -30,6 +30,12 @@
 //	return *((uint32_t*)Buffer);
 //}
 
+#define MEMPROG_MAJOR_VERSION  ((uint32_t)2)
+#define MEMPROG_MINOR_VERSION  ((uint32_t)0)
+#define MEMPROG_PATCH_VERSION  ((uint32_t)0)
+#define MEMPROG_VERSION        ((MEMPROG_MAJOR_VERSION << 24) | ((MEMPROG_MINOR_VERSION) << 16) | ((MEMPROG_PATCH_VERSION << 8)))
+
+
 // NOTE: Make sure to update memprog.py if these flags change
 // TODO move this to another file. Host specific stuff should not be here
 typedef enum {
@@ -90,8 +96,8 @@ typedef enum __attribute__((__packed__)) {
 // FIXME struct packing is compiler defined. This is almost guaranteed to not work correctly on some combination
 //  of target / compiler. Should instead use `uint8_t Params[]` and have e.g. `void SetAddress(uint32_t Address) { Params[4] = Address & 0xFF, ...}`
 typedef struct __attribute__((__packed__)) {
-	MEMPROG_STATUS Status: 8;
 	MEMPROG_TOKEN Token: 8;
+	MEMPROG_STATUS Status: 8;
 	uint8_t Interface: 8;
 	MEMPROG_CMD Command: 8;
 

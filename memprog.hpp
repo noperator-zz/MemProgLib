@@ -21,24 +21,42 @@ public:
 	}
 	virtual ~MemProg() = default;
 
-	virtual void Init() {}
-
 	/// nullptr terminated array of MemProg *
 	static void StaticInit(MemProg ** Instances) {
-		MemProg * inst;
+		MemProg * const * inst;
 		MemProg::Interfaces = Instances;
+		MemProg * const * ptr = Interfaces;
 
 		// Initialize each interface
-		for (inst = *Interfaces; inst; inst++) {
-			inst->Init();
+		for (; *ptr; ptr++) {
+			(*ptr)->Init();
 		}
 	}
 
 	static void StaticRun() {
 		// TODO select which instance to run based on:
 		//  - whether it's active (has a command running)
-		//  - whether it's waiting for a free buffer
+		//  - whether it's waiting for a free buffer (must be active for this to be true)
 		//  - which instance ran last time (don't run the same one twice if another command is active/waiting)
+
+		// Currently, we just run them sequentially
+		MemProg * const * ptr = Interfaces;
+
+		for (; *ptr; ptr++) {
+			// find the index of the current interface
+			if (*ptr == CurrentInterface) {
+				// and choose the next one
+				CurrentInterface = *(ptr + 1);
+				break;
+			}
+		}
+
+		// if we reached the end of the list, go back to the start
+		if (!CurrentInterface) {
+			CurrentInterface = Interfaces[0];
+		}
+
+		CurrentInterface->Run();
 	}
 
 	constexpr uint32_t BufferIndex(const volatile uint8_t * const Address) {
@@ -80,53 +98,26 @@ public:
 
 protected:
 	MEMPROG_PARAM LocalParam;
-//	MEMPROG_STATUS Status;
-//	uint32_t Code;
 
 	using CMD_FUNC = void (MemProg::*)();
+
+	virtual void Init() {}
 
 	virtual CMD_FUNC GetHandler(MEMPROG_CMD Command) {
 		return nullptr;
 	}
 
-
-
 private:
-	static MemProg ** Interfaces;
+	static inline MemProg * const * Interfaces = nullptr;
+	static inline MemProg * CurrentInterface = nullptr;
 
-//	inline bool _CMD_DEFAULT() {
-//		return true;
-//	}
-
-	virtual void CMD_QUERY_CAP() {
-		LocalParam.P1 = (uint32_t)Buffer;
-		LocalParam.P2 = BufferSize;
-		LocalParam.P3 = NumBuffers;
+	void CMD_QUERY_CAP() {
+		LocalParam.Code = MEMPROG_VERSION;
+		LocalParam.P1 = (uint32_t)BufferDescriptors;
+		LocalParam.P2 = (uint32_t)Buffer;
+		LocalParam.P3 = (NumBuffers << 24) | BufferSize;
 		LocalParam.Status = MEMPROG_STATUS_OK;
 	}
-//	virtual bool CMD_CONTINUE_QUERY_CAP() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_START_MASS_ERASE() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_CONTINUE_MASS_ERASE() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_START_PROG_INIT() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_CONTINUE_PROG_INIT() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_START_PROG() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_CONTINUE_PROG() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_START_PROG_FINI() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-//	virtual bool CMD_CONTINUE_PROG_FINI() { return _CMD_DEFAULT(); }// __attribute__ ((weak, alias ("_ZN7MemProg12_CMD_DEFAULTEv")));
-
-//	struct CMD_INFO {
-//		MEMPROG_CMD Command;
-//		CMD_FUNC Func;
-//	};
-
-//	// NOTE: Make sure to update memprog.h:MEMPROG_CMD if changing these
-//	static constexpr CMD_INFO COMMAND_MAP[]{
-//			{MEMPROG_CMD_QUERY_CAP,  &MemProg::CMD_QUERY_CAP},
-//			{MEMPROG_CMD_MASS_ERASE, &MemProg::CMD_MASS_ERASE},
-//			{MEMPROG_CMD_PROG_INIT,  &MemProg::CMD_PROG_INIT},
-//			{MEMPROG_CMD_PROG,       &MemProg::CMD_PROG},
-//			{MEMPROG_CMD_PROG_FINI,  &MemProg::CMD_PROG_FINI},
-//	};
 
 	const uint32_t Interface;
 	volatile MEMPROG_PARAM & Param;
@@ -135,7 +126,6 @@ private:
 	const uint32_t BufferSize;
 	const uint32_t NumBuffers;
 
-//	const CMD_INFO * CurrentCommandInfo;
 	CMD_FUNC CurrentHandler;
 	bool Active;
 
@@ -150,7 +140,7 @@ private:
 	}
 
 	void Run() {
-		if (Param.Token == MEMPROG_TOKEN_HOST) {
+		if (Param.Token != MEMPROG_TOKEN_TARGET) {
 			return;
 		}
 		if (Param.Interface != Interface) {
@@ -158,11 +148,12 @@ private:
 		}
 
 		if (!Active) {
+			// Check if host wants to start a command
 			if (Param.Status == MEMPROG_STATUS_BUSY) {
+				// Copy the volatile params to LocalParams
 				Active = true;
-//				LocalParam = MEMPROG_PARAM {};
-				LocalParam.Status = MEMPROG_STATUS_BUSY;
-				// Host wants to start a command
+				memcpy(LocalParam, Param, sizeof(LocalParam));
+
 				// Check if a handler for this command exists
 				if (!(CurrentHandler = BaseGetHandler(Param.Command))) {
 					LocalParam.Status = MEMPROG_STATUS_ERR_PARAM;
@@ -171,31 +162,23 @@ private:
 		}
 
 		if (Active) {
+			// if status == busy, keep running the command
 			if (LocalParam.Status == MEMPROG_STATUS_BUSY) {
 				(this->*CurrentHandler)();
 			}
 
+			// if status != busy, the command has finished; notify the host by modifying Params.Status
 			if (LocalParam.Status != MEMPROG_STATUS_BUSY) {
 				Active = false;
 				CurrentHandler = nullptr;
 
-				MEMPROG_STATUS RealStatus = LocalParam.Status;
-				LocalParam.Status = MEMPROG_STATUS_BUSY;
+//				LocalParam.Token = MEMPROG_TOKEN_TARGET; This is necessarily already TOKEN_TARGET based on the first if statement in this function
 
 				memcpy(Param, LocalParam, sizeof(MEMPROG_PARAM));
-				Param.Status = RealStatus;
+				// Params.Token must be changed after all the other params. It indicates to the host
+				// that all other params are valid to read
+				Param.Token = MEMPROG_TOKEN_HOST;
 			}
 		}
 	}
-
-//	void Inspect(MEMPROG_CMD & CurrentCommand, MEMPROG_STATUS &CurrentStatus, uint32_t &CurrentCode) {
-//		if (CurrentCommandInfo) {
-//			CurrentCommand = CurrentCommandInfo->Command;
-//		} else {
-//			CurrentCommand = MEMPROG_CMD_NONE;
-//		}
-//
-//		CurrentStatus = Status;
-//		CurrentCode = Code;
-//	}
 };
