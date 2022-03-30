@@ -5,7 +5,6 @@
 // Base class which defines the constructor and provides stubs for command methods
 class MemProg {
 public:
-	MemProg() = delete;
 	MemProg() : LocalParam(), CurrentHandler(nullptr), Active(false)
 	{
 	}
@@ -27,8 +26,8 @@ public:
 			(*ptr)->Init();
 		}
 
-		Param.Status = MEMPROG_STATUS_IDLE;
-		Param.Token = MEMPROG_TOKEN_HOST;
+		Param->Status = MEMPROG_STATUS_IDLE;
+		Param->Token = MEMPROG_TOKEN_HOST;
 	}
 
 	static void StaticRun() {
@@ -66,7 +65,7 @@ public:
 		// Loop through BDTs until a free one is found
 		uint8_t i;
 		for (i = 0; i < NumBuffers; i++) {
-			MEMPROG_BDT &bdt = BufferDescriptors[i];
+			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE) {
 				bdt.Status = MEMPROG_BUFFER_STATUS_PENDING;
 				bdt.Interface = Interface;
@@ -81,7 +80,7 @@ public:
 		uint32_t Address = 0xFFFFFFFF;
 		uint8_t i;
 		for (i = 0; i < NumBuffers; i++) {
-			MEMPROG_BDT &bdt = BufferDescriptors[i];
+			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Address < Address) {
 				Address = bdt.Address;
 			}
@@ -149,27 +148,27 @@ private:
 		//  While we're at it, stop supporting multiple BDT bases, buffer bases?
 		//  ALl that info would be passed to StaticInit instead of constructor.
 		//  Interface number could be implied from the order of the Interfaces array
-		if (Param.Token != MEMPROG_TOKEN_TARGET) {
+		if (Param->Token != MEMPROG_TOKEN_TARGET) {
 			return;
 		}
 
 		if (!Active) {
 			// Interface only needs to be checked to start a new command
 			//  If a command is already active, it doesn't read from Params, so we can just run it
-			if (Param.Interface != Interface) {
+			if (Param->Interface != Interface) {
 				return;
 			}
 
 			// Check if host wants to start a command
-			if (Param.Status == MEMPROG_STATUS_START) {
+			if (Param->Status == MEMPROG_STATUS_START) {
 				// Acknowledge the command by changing status to IDLE and passing token back after copying Params
-				Param.Status = MEMPROG_STATUS_IDLE;
+				Param->Status = MEMPROG_STATUS_IDLE;
 				// Copy the volatile params to LocalParams
 				Active = true;
-				memcpy(LocalParam, Param, sizeof(LocalParam));
+				memcpy(&LocalParam, Param, sizeof(LocalParam));
 
 				// Check if a handler for this command exists
-				if (!(CurrentHandler = BaseGetHandler(Param.Command))) {
+				if (!(CurrentHandler = BaseGetHandler(Param->Command))) {
 					LocalParam.Status = MEMPROG_STATUS_ERR_PARAM;
 				}
 			}
@@ -183,7 +182,7 @@ private:
 
 			// if status != START, the command has finished; notify the host by modifying Param.Status
 			if (LocalParam.Status != MEMPROG_STATUS_START) {
-				if (Param.Status == MEMPROG_STATUS_IDLE) {
+				if (Param->Status == MEMPROG_STATUS_IDLE) {
 					// We can only write to Param if Status != IDLE, otherwise we would be overwriting a pending command
 					// or returned data from another interface. In this case just return and try again next time
 					return;
@@ -194,10 +193,10 @@ private:
 
 //				LocalParam.Token = MEMPROG_TOKEN_TARGET; This is necessarily already TOKEN_TARGET based on the first if statement in this function
 
-				memcpy(Param, LocalParam, sizeof(MEMPROG_PARAM));
+				memcpy(Param, &LocalParam, sizeof(MEMPROG_PARAM));
 				// Params.Token must be changed after all the other params. It indicates to the host
 				// that all other params are valid to read
-				Param.Token = MEMPROG_TOKEN_HOST;
+				Param->Token = MEMPROG_TOKEN_HOST;
 			}
 		}
 

@@ -51,14 +51,19 @@ typedef enum __attribute__((__packed__)) {
 	// Indicates that any interface is free to overwrite the params (assuming they hold the token of course)
 	MEMPROG_STATUS_IDLE                 = 0x00,
 	// Set by the host to indicate to the target that params hold information about a new command
-	// The target will set it back to IDLE after copying necessary data from params
+	// The target will set it to ACK after copying necessary data from params
 	MEMPROG_STATUS_START                = 0x01,
+	// Set by the target to indicate that a command has been received. This lets the host know that
+	// it can continue and set status back to IDLE
+	MEMPROG_STATUS_ACK                  = 0x02,
+
+	// Values below 0x40 are reserved. Do not use. Values >= 0x40 are return statuses
 
 	// All other status codes are set by the command handlers upon completion of a command. They indicate
 	// to the host that the command is complete and return data should be read out.
 	// The host will set it back to IDLE after copying necessary data from params
 
-	MEMPROG_STATUS_OK                   = 0x7F,
+	MEMPROG_STATUS_OK                   = 0x40,
 
 	MEMPROG_STATUS_ERR_PARAM            = 0x80,
 	MEMPROG_STATUS_ERR_EXECUTION        = 0x81,
