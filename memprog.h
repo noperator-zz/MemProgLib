@@ -49,13 +49,13 @@ typedef enum {
 
 typedef enum __attribute__((__packed__)) {
 	// Indicates that any interface is free to overwrite the params (assuming they hold the token of course)
-	MEMPROG_STATUS_IDLE                 = 0x00,
+	_MEMPROG_STATUS_IDLE                = 0x00,
 	// Set by the host to indicate to the target that params hold information about a new command
 	// The target will set it to ACK after copying necessary data from params
-	MEMPROG_STATUS_START                = 0x01,
+	_MEMPROG_STATUS_START               = 0x01,
 	// Set by the target to indicate that a command has been received. This lets the host know that
 	// it can continue and set status back to IDLE
-	MEMPROG_STATUS_ACK                  = 0x02,
+	_MEMPROG_STATUS_ACK                 = 0x02,
 
 	// Values below 0x40 are reserved. Do not use. Values >= 0x40 are return statuses
 
@@ -72,18 +72,47 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_STATUS_ERR_OTHER            = 0xFF,
 } MEMPROG_STATUS;
 
-// NOTE: Make sure to update MemProg::COMMAND_MAP when changing the MEMPROG_CMD enum
 typedef enum __attribute__((__packed__)) {
-//	MEMPROG_CMD_NONE                    = 0x00,
+	// IN
+	//  None
+	// OUT
+	//  None
+	MEMPROG_CMD_MASS_ERASE,
 
-//	MEMPROG_CMD_MASS_ERASE              = 0x10,
-//
-//	MEMPROG_CMD_PROG_INIT               = 0x20,
-//	MEMPROG_CMD_PROG                    = 0x21,
-//	MEMPROG_CMD_PROG_FINI               = 0x22,
+	// IN
+	//  P1: Start address
+	//  P2: Length
+	// OUT
+	//  None
+	MEMPROG_CMD_ERASE_RANGE,
+
+	// IN
+	//  P1: //Start address (obsoleted by BDTs)
+	//  P2: Total length (to know when all buffers have been received from host)
+	// OUT
+	//  None
+	MEMPROG_CMD_PROG,
+
+	// IN
+	//  P1: //Start address (obsoleted by BDTs)
+	//  P2: Total length (to know when all buffers have been received from host)
+	// OUT
+	//  P1: checksum of data
+	// Target should read back after programming and use that to calculate checksum
+	MEMPROG_CMD_PROG_VERIFY,
+
+
 
 	// Bit 7 indicates that the host should read from buffers
 	// In general, 'read' type commands should set this bit, even if they don't use buffers
+
+	// IN
+	//  None
+	// OUT
+	//	Code: MEMPROG_VERSION
+	//	P1: bdt_base_address
+	//	P2: buffer_base_address
+	//	P3: (NumBuffers << 24) | BufferSize
 	MEMPROG_CMD_QUERY_CAP               = 0x80,
 } MEMPROG_CMD;
 
@@ -110,27 +139,22 @@ typedef enum __attribute__((__packed__)) {
 // FIXME struct packing is compiler defined. This is almost guaranteed to not work correctly on some combination
 //  of target / compiler. Should instead use `uint8_t Params[]` and have e.g. `void SetAddress(uint32_t Address) { Params[4] = Address & 0xFF, ...}`
 typedef struct __attribute__((__packed__)) {
-	MEMPROG_TOKEN Token: 8;
-	MEMPROG_STATUS Status: 8;
-	uint8_t Interface: 8;
-	MEMPROG_CMD Command: 8;
+	MEMPROG_TOKEN Token: 8U;
+	MEMPROG_STATUS Status: 8U;
+	uint8_t Interface: 8U;
+	MEMPROG_CMD Command: 8U;
 
-	union {
-		uint32_t Code;
-		uint32_t Sequence;
-	};
-	union {
-		uint32_t Address;
-		uint32_t P1;
-	};
-	union {
-		uint32_t Length;
-		uint32_t P2;
-	};
-	union {
-		uint32_t BufferAddress;
-		uint32_t P3;
-	};
+	uint32_t Code;
+
+	// 6 parameters so that the total size is a power of 2, 32 bytes
+	// In reverse order so that we can replace P6 with something else in the future
+	// without breaking existing code
+	uint32_t P6;
+	uint32_t P5;
+	uint32_t P4;
+	uint32_t P3;
+	uint32_t P2;
+	uint32_t P1;
 } MEMPROG_PARAM;
 
 typedef enum __attribute__((__packed__)) {
@@ -141,11 +165,14 @@ typedef enum __attribute__((__packed__)) {
 
 typedef struct __attribute__((__packed__)) {
 	// Whether the buffer is currently free, being filled, or full
-	MEMPROG_BUFFER_STATUS Status: 8;
+	MEMPROG_BUFFER_STATUS Status: 8U;
 	// Which interface the buffer is currently used by (valid if status != free)
-	uint8_t Interface: 8;
+	uint8_t Interface: 8U;
+	//
+	uint16_t _RESERVERD1: 16U;
 
-	uint16_t _RESERVERD1: 16;
+	// pad the entire structure up to a power of 2, 16 bytes
+	uint32_t _PADDING1;
 	// Where the data was read from / where it should be written to
 	uint32_t Address;
 	// Amount of data in the buffer
