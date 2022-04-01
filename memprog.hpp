@@ -1,16 +1,64 @@
 #pragma once
 #include "memprog.h"
 #include <cstring>
+#include <string>
 
 // Base class which defines the constructor and provides stubs for command methods
 class MemProg {
-public:
-	MemProg() : LocalParam(), CurrentHandler(nullptr), Active(false), Interface(0)
-	{
+private:
+	// These must be defined in a source file in the MCU firmware
+
+	// Array of base pointers to the derived MemProg instances
+	static MemProg * const Interfaces[];
+	// Address of the parameters structure
+	static volatile MEMPROG_PARAM * const Param;
+	// Address of the buffer descriptor tables structure
+	static volatile MEMPROG_BDT * const BufferDescriptors;
+	// Address of the buffers
+	static volatile uint8_t * const Buffer;
+	// Size of each buffer
+	static const uint32_t BufferSize;
+	// Number of buffers
+	static const uint32_t NumBuffers;
+
+	// Debug putc function. Set as nullptr to disable debugging
+	static void (* const putc)(uint8_t);
+	// Debug logging verbosity. 0 = highest verbosity
+	static const uint8_t LogLevel;
+
+protected:
+//	static void LogPrints(std::string_view Message, uint8_t Level) {
+//		if (dputc && LogLevel <= Level) {
+//			for (auto c: Message) {
+//				dputc(c);
+//			}
+//		}
+//	}
+	static void lputc(uint8_t c, uint8_t Level=LOG_DEBUG) {
+		if (putc && LogLevel <= Level) {
+			putc(c);
+		}
 	}
+//	static void LogDebug(std::string_view Message) { LogPrints(Message, 0); }
+//	static void LogInfo(std::string_view Message) { LogPrints(Message, 10); }
+//	static void LogWarn(std::string_view Message) { LogPrints(Message, 20); }
+//	static void LogError(std::string_view Message) { LogPrints(Message, 30); }
+//	static void LogDebug(uint8_t c) { LogPrintc(c, 0); }
+//	static void LogInfo(uint8_t c) { LogPrintc(c, 10); }
+//	static void LogWarn(uint8_t c) { LogPrintc(c, 20); }
+//	static void LogError(uint8_t c) { LogPrintc(c, 30); }
+
+public:
+	static constexpr uint8_t LOG_DEBUG = 0;
+	static constexpr uint8_t LOG_INFO = 0;
+	static constexpr uint8_t LOG_WARN = 0;
+	static constexpr uint8_t LOG_ERROR = 0;
+
+//	MemProg() : LocalParam(), CurrentHandler(nullptr), Active(false), Interface(0)
+//	{
+//	}
 	virtual ~MemProg() = default;
 
-	/// nullptr terminated array of MemProg *
 	static void StaticInit() {
 		MemProg * const * ptr = Interfaces;
 
@@ -127,13 +175,6 @@ private:
 	bool Active;
 	uint8_t Interface;
 
-	static MemProg * const Interfaces[];
-	static volatile MEMPROG_PARAM * const Param;
-	static volatile MEMPROG_BDT * const BufferDescriptors;
-	static volatile uint8_t * const Buffer;
-	static const uint32_t BufferSize;
-	static const uint32_t NumBuffers;
-
 	static inline MemProg * CurrentInterface = nullptr;
 
 	void CMD_QUERY_CAP() {
@@ -189,6 +230,10 @@ private:
 				Active = true;
 				memcpy(&LocalParam, (const void *)Param, sizeof(LocalParam));
 
+				lputc(0x00);
+				lputc(Interface);
+				lputc(LocalParam.Command);
+
 				// Acknowledge the command by changing status to IDLE and passing token back after copying Params
 				Param->Status = _MEMPROG_STATUS_IDLE;
 
@@ -204,17 +249,25 @@ private:
 			if (LocalParam.Status < MEMPROG_STATUS_OK) {
 				// Status will be START the first time this is called. Handlers can use this fact to reset their state
 				(this->*CurrentHandler)();
-				// After the first run, change Status to something else
-				LocalParam.Status = _MEMPROG_STATUS_IDLE;
+				// After the first run, change Status to something else, unless it has already changed to a valid return value
+				if (LocalParam.Status < MEMPROG_STATUS_OK) {
+					LocalParam.Status = _MEMPROG_STATUS_IDLE;
+				}
 			}
 
 			// if status has been set, the command has finished; notify the host by modifying Param.Status
 			if (LocalParam.Status > MEMPROG_STATUS_OK) {
+				lputc(0x01);
+				lputc(Interface);
+				lputc(LocalParam.Command);
+
 				if (Param->Status == _MEMPROG_STATUS_IDLE) {
 					// We can only write to Param if Status != IDLE, otherwise we would be overwriting a pending command
 					// or returned data from another interface. In this case just return and try again next time
 					return;// TODO ?
 				}
+
+				lputc(0x02);
 
 				Active = false;
 				CurrentHandler = nullptr;
