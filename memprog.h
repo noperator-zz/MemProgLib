@@ -33,7 +33,7 @@
 #define MEMPROG_MAJOR_VERSION  ((uint32_t)2)
 #define MEMPROG_MINOR_VERSION  ((uint32_t)0)
 #define MEMPROG_PATCH_VERSION  ((uint32_t)0)
-#define MEMPROG_VERSION        ((MEMPROG_MAJOR_VERSION << 24) | ((MEMPROG_MINOR_VERSION) << 16) | ((MEMPROG_PATCH_VERSION << 8)))
+#define MEMPROG_VERSION        ((MEMPROG_MAJOR_VERSION << 16) | ((MEMPROG_MINOR_VERSION) << 8) | (MEMPROG_PATCH_VERSION))
 
 
 // NOTE: Make sure to update memprog.py if these flags change

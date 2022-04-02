@@ -39,6 +39,11 @@ protected:
 			putc(c);
 		}
 	}
+	void log(uint8_t c) const {
+		lputc(c);
+		lputc(Interface);
+		lputc(LocalParam.Command);
+	}
 //	static void LogDebug(std::string_view Message) { LogPrints(Message, 0); }
 //	static void LogInfo(std::string_view Message) { LogPrints(Message, 10); }
 //	static void LogWarn(std::string_view Message) { LogPrints(Message, 20); }
@@ -78,6 +83,14 @@ public:
 		Param->Token = MEMPROG_TOKEN_HOST;
 	}
 
+	class ReleaseToken {
+	public:
+		virtual ~ReleaseToken() {
+			// Allow host to process
+			Param->Token = MEMPROG_TOKEN_HOST;
+		}
+	};
+
 	static void StaticRun() {
 		// TODO select which instance to run based on:
 		//  - whether it's active (has a command running)
@@ -85,24 +98,33 @@ public:
 		//  - which instance ran last time (don't run the same one twice if another command is active/waiting)
 
 		// Currently, we just run them sequentially
-		MemProg * const * ptr = Interfaces;
+		MemProg * const * ptr;
 
-		for (; *ptr; ptr++) {
-			// find the index of the current interface
-			if (*ptr == CurrentInterface) {
-				// and choose the next one
-				CurrentInterface = *(ptr + 1);
-				break;
+		if (Param->Token != MEMPROG_TOKEN_TARGET) {
+			return;
+		}
+
+		{
+			ReleaseToken s;
+			ptr = Interfaces;
+
+			for (; *ptr; ptr++) {
+				// find the index of the current interface
+				if (*ptr == CurrentInterface) {
+					// and choose the next one
+					CurrentInterface = *(ptr + 1);
+					break;
+				}
 			}
-		}
 
-		// if we reached the end of the list, go back to the start
-		if (!CurrentInterface) {
-			CurrentInterface = Interfaces[0];
-		}
+			// if we reached the end of the list, go back to the start
+			if (!CurrentInterface) {
+				CurrentInterface = Interfaces[0];
+			}
 
-		// TODO if nothing ran, try another interface (until all are tried, then return to shell)
-		CurrentInterface->Run();
+			// TODO if nothing ran, try another interface (until all are tried, then return to shell)
+			CurrentInterface->Run();
+		}
 	}
 
 private:
@@ -209,14 +231,6 @@ private:
 
 	// Return true if a command was run
 	void Run() {
-		// TODO since OpenOCD doesn't support multiple parameter bases, maybe stop supporting it here too?
-		//  While we're at it, stop supporting multiple BDT bases, buffer bases?
-		//  ALl that info would be passed to StaticInit instead of constructor.
-		//  Interface number could be implied from the order of the Interfaces array
-		if (Param->Token != MEMPROG_TOKEN_TARGET) {
-			return;
-		}
-
 		if (!Active) {
 			// Interface only needs to be checked to start a new command
 			//  If a command is already active, it doesn't read from Params, so we can just run it
@@ -230,12 +244,10 @@ private:
 				Active = true;
 				memcpy(&LocalParam, (const void *)Param, sizeof(LocalParam));
 
-				lputc(0x00);
-				lputc(Interface);
-				lputc(LocalParam.Command);
+				log(0x00);
 
 				// Acknowledge the command by changing status to IDLE and passing token back after copying Params
-				Param->Status = _MEMPROG_STATUS_IDLE;
+				Param->Status = _MEMPROG_STATUS_ACK;
 
 				// Check if a handler for this command exists
 				if (!(CurrentHandler = BaseGetHandler(Param->Command))) {
@@ -245,29 +257,29 @@ private:
 		}
 
 		if (Active) {
-			// if status hasn't bene set yet, keep running the command
+			// if status hasn't been set yet, keep running the command
 			if (LocalParam.Status < MEMPROG_STATUS_OK) {
 				// Status will be START the first time this is called. Handlers can use this fact to reset their state
+				log(0x01);
+
 				(this->*CurrentHandler)();
 				// After the first run, change Status to something else, unless it has already changed to a valid return value
 				if (LocalParam.Status < MEMPROG_STATUS_OK) {
 					LocalParam.Status = _MEMPROG_STATUS_IDLE;
+				} else {
+					log(0x02);
 				}
 			}
 
 			// if status has been set, the command has finished; notify the host by modifying Param.Status
-			if (LocalParam.Status > MEMPROG_STATUS_OK) {
-				lputc(0x01);
-				lputc(Interface);
-				lputc(LocalParam.Command);
-
-				if (Param->Status == _MEMPROG_STATUS_IDLE) {
-					// We can only write to Param if Status != IDLE, otherwise we would be overwriting a pending command
+			if (LocalParam.Status >= MEMPROG_STATUS_OK) {
+				if (Param->Status != _MEMPROG_STATUS_IDLE) {
+					// We can only write to Param if Status == IDLE, otherwise we would be overwriting a pending command
 					// or returned data from another interface. In this case just return and try again next time
-					return;// TODO ?
+					return;
 				}
 
-				lputc(0x02);
+				log(0x10);
 
 				Active = false;
 				CurrentHandler = nullptr;
@@ -280,8 +292,5 @@ private:
 				Param->Token = MEMPROG_TOKEN_HOST;
 			}
 		}
-
-		// Allow host to process
-		Param->Token = MEMPROG_TOKEN_HOST;
 	}
 };
