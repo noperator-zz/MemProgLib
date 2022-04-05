@@ -24,10 +24,13 @@ private:
 	// Optional Debug putc function. Set as nullptr to disable debugging
 	static void (* const putc)(uint8_t);
 	// Optional timekeeping function for debugging. Return millseconds. Set as nullptr if not used
-	static uint32_t (* const time_ms)();
+	static uint32_t (* const volatile time_ms)();
 	// NOTE ========================================================================
 
-	static constexpr uint32_t HANDLER_TIMEOUT_MS = 10;
+	// Maximum duration `StaticRun` should run for
+	static constexpr uint32_t HANDLER_TIMEOUT_MS = 30;
+	// Maximum duration to wait for the token before printing an error message. Will continue to wait after this timeout
+	static constexpr uint32_t TOKEN_TIMEOUT_MS = 10;
 	static constexpr uint8_t hex[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
 protected:
@@ -82,16 +85,8 @@ public:
 		}
 
 		Param->Status = _MEMPROG_STATUS_IDLE;
-		Param->Token = MEMPROG_TOKEN_HOST;
+		ReleaseToken();
 	}
-
-//	class ReleaseToken {
-//	public:
-//		virtual ~ReleaseToken() {
-//			// Allow host to process
-//			Param->Token = MEMPROG_TOKEN_HOST;
-//		}
-//	};
 
 	static void StaticRun() {
 		// TODO select which instance to run based on:
@@ -102,7 +97,7 @@ public:
 		MemProg * inst;
 
 		// if we have the token
-		if (Param->Token == MEMPROG_TOKEN_TARGET) {
+		if (TryAcquireToken()) {
 			bool released = false;
 
 			// Check if host wants to start a command
@@ -116,7 +111,7 @@ public:
 
 				// Acknowledge the command by changing status to IDLE and passing token back after copying Params
 				Param->Status = _MEMPROG_STATUS_ACK;
-				Param->Token = MEMPROG_TOKEN_HOST;
+				ReleaseToken();
 				released = true;
 
 				// Check if a handler for this command exists
@@ -139,22 +134,23 @@ public:
 						memcpy((void *)Param, &inst->LocalParam, sizeof(MEMPROG_PARAM));
 						// Params.Token must be changed after all the other params. It indicates to the host
 						// that all other params are valid to read
-						Param->Token = MEMPROG_TOKEN_HOST;
+						ReleaseToken();
 						released = true;
 						break;
 					}
 				}
 			} else {
+				// host may accidentally pass us the token before reading out return data. Do nothing in this case
 				lputs("BAD STATUS "); lputh1(Param->Status); lend();
 			}
 
 			if (!released) {
-				Param->Token = MEMPROG_TOKEN_HOST;
+				ReleaseToken();
 			}
 		}
 
 		// then run any active handlers
-		uint32_t end_time = time_ms ? (time_ms() + 10) : 0;
+		uint32_t start_time = time_ms ? time_ms() : 0;
 		uint8_t i = 0;
 		for (; (inst = Interfaces[i]); i++) {
 			if ( ! (inst->Active && inst->LocalParam.Status < MEMPROG_STATUS_OK)) {
@@ -171,20 +167,32 @@ public:
 				inst->LocalParam.Status = _MEMPROG_STATUS_IDLE;
 			} else {
 				inst->log("finish "); lputh1(inst->LocalParam.Command); lend();
+
+				uint8_t NumBroken;
+				inst->ForceReleaseBuffers(&NumBroken);
+				if (NumBroken) {
+					// Tack original status onto Code
+					inst->LocalParam.Code = (inst->LocalParam.Code << 8) | ((uint8_t)inst->LocalParam.Status);
+					inst->LocalParam.Status = _MEMPROG_STATUS_BUFFER;
+					inst->log("BROKEN "); lputh1(NumBroken); lend();
+				}
 			}
 
-			if (time_ms && (time_ms() > end_time)) {
-				uint32_t overrun = time_ms() - end_time;
-				lputs("LOOP OVERRUN "); lputh4(overrun); lend();
-				break;
+			if (time_ms) {
+				uint32_t elapsed = time_ms() - start_time;
+
+				if (elapsed > HANDLER_TIMEOUT_MS) {
+					if (elapsed > (HANDLER_TIMEOUT_MS * 2)) {
+						// only print error message if significantly overran (double)
+						lputs("LOOP OVERRUN "); lputh4(elapsed); lend();
+					}
+					break;
+				}
 			}
 		}
 	}
 
 private:
-//	static inline uint8_t BufferIndex(const volatile MEMPROG_BDT * const bdt) {
-//		return bdt - BufferDescriptors;
-//	}
 	inline void DEFAULT_HANDLER() { LocalParam.Status = MEMPROG_STATUS_ERR_IMPLEMENTATION; }
 
 protected:
@@ -225,6 +233,7 @@ protected:
 		uint8_t i;
 
 		*BufferIndex = -1;
+		AcquireToken();
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE) {
@@ -234,6 +243,7 @@ protected:
 				*BufferIndex = i;
 			}
 		}
+		ReleaseToken();
 		log("acquire -\n");
 	}
 
@@ -243,14 +253,16 @@ protected:
 		*BufferIndex = -1;
 
 		uint8_t i;
+		AcquireToken();
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
-			if (bdt.Interface == Interface && bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Address < *Address) {
+			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Interface == Interface && bdt.Address < *Address) {
 				*Address = bdt.Address;
 				*Length = bdt.Length;
 				*BufferIndex = i;
 			}
 		}
+		ReleaseToken();
 		if (*BufferIndex >= 0) {
 			log("get "); lputh1(*BufferIndex); lputh4(*Address); lputh4(*Length); lend();
 		} else {
@@ -260,15 +272,22 @@ protected:
 
 	void FillBuffer(uint8_t BufferIndex, uint32_t Address, uint32_t Length) const {
 		log("fill "); lputh1(BufferIndex); lend();
+		AcquireToken();
 		BufferDescriptors[BufferIndex].Interface = Interface;
 		BufferDescriptors[BufferIndex].Address = Address;
 		BufferDescriptors[BufferIndex].Length = Length;
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FULL;
+		ReleaseToken();
 	}
 
 	void ReleaseBuffer(uint8_t BufferIndex) const {
+		if (BufferIndex < 0) {
+			log("BAD RELEASE");
+		}
 		log("release "); lputh1(BufferIndex); lend();
+		AcquireToken();
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FREE;
+		ReleaseToken();
 	}
 
 private:
@@ -306,5 +325,54 @@ private:
 			default:
 				return GetHandler(Command);
 		}
+	}
+
+	static bool TryAcquireToken() {
+		if (Param->Token == MEMPROG_TOKEN_TARGET) {
+			AcquireToken();
+			return true;
+		}
+		return false;
+	}
+
+	static void AcquireToken() {
+		// NOTE should probably timeout, but if we can't get the token for some reason, the host is probably dead
+		//  anyway
+		uint32_t t = time_ms ? time_ms() : 0;
+
+		lputs("wt\n");
+		while (Param->Token != MEMPROG_TOKEN_TARGET) {
+		}
+
+		if (time_ms) {
+			t = time_ms() - t;
+			if (t > TOKEN_TIMEOUT_MS) {
+				lputs("TOKEN TIMEOUT "); lputh4(t); lend();
+			}
+		}
+		lputs("at\n");
+	}
+
+	static void ReleaseToken() {
+		lputs("rt\n");
+		Param->Token = MEMPROG_TOKEN_HOST;
+	}
+
+	void ForceReleaseBuffers(uint8_t *NumBroken) const {
+		// NOTE only call this when token is not taken
+		uint8_t i;
+		*NumBroken = 0;
+
+		AcquireToken();
+		for (i = 0; i < NumBuffers; i++) {
+			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
+			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE || bdt.Interface != Interface) {
+				continue;
+			}
+
+			(*NumBroken)++;
+			bdt.Status = MEMPROG_BUFFER_STATUS_FREE;
+		}
+		ReleaseToken();
 	}
 };

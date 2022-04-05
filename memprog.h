@@ -26,12 +26,18 @@ typedef enum __attribute__((__packed__)) {
 	// The host will set it back to IDLE after copying necessary data from params
 
 	MEMPROG_STATUS_OK                   = 0x40,
+	MEMPROG_STATUS_ERR_PARAM            = 0x41,
+	MEMPROG_STATUS_ERR_EXECUTION        = 0x42,
+	MEMPROG_STATUS_ERR_TIMEOUT          = 0x43,
 
-	MEMPROG_STATUS_ERR_PARAM            = 0x80,
-	MEMPROG_STATUS_ERR_EXECUTION        = 0x81,
-	MEMPROG_STATUS_ERR_TIMEOUT          = 0x82,
-	MEMPROG_STATUS_ERR_IMPLEMENTATION   = 0xFE,
-	MEMPROG_STATUS_ERR_OTHER            = 0xFF,
+	MEMPROG_STATUS_ERR_IMPLEMENTATION   = 0x7E,
+	MEMPROG_STATUS_ERR_OTHER            = 0x7F,
+
+	// 0x80 - 0xFF should only be used internally. Memprog may overwrite the original status with one of these values.
+	//  In this case the original status will be shifted onto the bottom of Param.Code
+
+	// An error was detected with the buffers (not all buffers were free at the end of the command)
+	_MEMPROG_STATUS_BUFFER              = 0x80,
 } MEMPROG_STATUS;
 
 // TODO how to read these from python?
