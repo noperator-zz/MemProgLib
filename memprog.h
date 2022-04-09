@@ -120,12 +120,14 @@ typedef enum __attribute__((__packed__)) {
 } MEMPROG_BUFFER_STATUS;
 
 typedef struct __attribute__((__packed__)) {
+	// Which side is allowed to access the buffer and BDT
+	MEMPROG_TOKEN Token: 8U;
 	// Whether the buffer is currently free, being filled, or full
 	MEMPROG_BUFFER_STATUS Status: 8U;
 	// Which interface the buffer is currently used by (valid if status != free)
 	uint8_t Interface: 8U;
 	//
-	uint16_t _RESERVERD1: 16U;
+	uint8_t _RESERVERD1: 8U;
 
 	// pad the entire structure up to a power of 2, 16 bytes
 	uint32_t _PADDING1;
@@ -134,3 +136,4 @@ typedef struct __attribute__((__packed__)) {
 	// Amount of data in the buffer
 	uint32_t Length;
 } MEMPROG_BDT;
+
