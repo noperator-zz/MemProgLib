@@ -19,7 +19,7 @@ private:
 	// Address of the buffer descriptor tables structure
 	static volatile MEMPROG_BDT * const BufferDescriptors;
 	// Address of the buffers
-	static volatile uint8_t * const Buffer;
+	static volatile uint8_t * const Buffers;
 	// Size of each buffer chunk
 	static const uint32_t BufferSize;
 	// Number of chunks to split the buffer into
@@ -244,9 +244,10 @@ protected:
 	virtual inline void CMD_ERASE_RANGE() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_PROG() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_VERIFY() { DEFAULT_HANDLER(); }
 
 	static uint8_t * GetBufferAddress(uint8_t BufferIndex) {
-		return const_cast<uint8_t *>(Buffer + BufferIndex * BufferSize);
+		return const_cast<uint8_t *>(Buffers + BufferIndex * BufferSize);
 	}
 
 
@@ -261,7 +262,7 @@ protected:
 	// ---   - host will only read from BDT once Status == FULL
 	// ---   - host will only write to BDT to change Status back to FREE or PENDING
 
-	void AcquireBuffer(int *BufferIndex) const {
+	void AcquireBuffer(int *BufferIndex, const uint8_t ** Buffer, uint32_t *Size) const {
 		// Loop through BDTs until a free one is found
 		uint8_t i;
 
@@ -276,6 +277,10 @@ protected:
 			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE) {
 				bdt.Status = MEMPROG_BUFFER_STATUS_PENDING;
 				bdt.Interface = Interface;
+
+				*Buffer = const_cast<uint8_t *>(Buffers + i * BufferSize);
+				*Size = BufferSize;
+
 				log("acquire "); lputh1(i); lend();
 				*BufferIndex = i;
 			}
@@ -362,7 +367,7 @@ private:
 	void CMD_QUERY_CAP() {
 		LocalParam.Code = MEMPROG_VERSION;
 		LocalParam.P1 = (uint32_t)BufferDescriptors;
-		LocalParam.P2 = (uint32_t)Buffer;
+		LocalParam.P2 = (uint32_t)Buffers;
 		LocalParam.P3 = (NumBuffers << 24) | BufferSize;
 		LocalParam.Status = MEMPROG_STATUS_OK;
 	}

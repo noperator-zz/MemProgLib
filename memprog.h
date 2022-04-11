@@ -70,6 +70,13 @@ typedef enum __attribute__((__packed__)) {
 	// Target should read back after programming and use that to calculate checksum
 	MEMPROG_CMD_PROG_VERIFY             = 0X11,
 
+	// IN
+	//  P1: Start address
+	//  P2: Length
+	// OUT
+	//  None
+	MEMPROG_CMD_VERIFY                  = 0X12,
+
 
 
 	// Bit 7 indicates that the host should read from buffers
