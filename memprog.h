@@ -53,29 +53,23 @@ typedef enum __attribute__((__packed__)) {
 	//  P2: Length
 	// OUT
 	//  None
-	MEMPROG_CMD_ERASE_RANGE             = 0X01,
+	MEMPROG_CMD_ERASE_RANGE             = 0x01,
 
 	// IN
 	//  P1: //Start address (obsoleted by BDTs)
 	//  P2: Total length (to know when all buffers have been received from host)
 	// OUT
 	//  None
-	MEMPROG_CMD_PROG                    = 0X10,
+	MEMPROG_CMD_PROG                    = 0x10,
 
-	// IN
-	//  P1: //Start address (obsoleted by BDTs)
-	//  P2: Total length (to know when all buffers have been received from host)
-	// OUT
-	//  P1: checksum of data
-	// Target should read back after programming and use that to calculate checksum
-	MEMPROG_CMD_PROG_VERIFY             = 0X11,
+//	// IN
+//	//  P1: //Start address (obsoleted by BDTs)
+//	//  P2: Total length (to know when all buffers have been received from host)
+//	// OUT
+//	//  P1: checksum of data
+//	// Target should read back after programming and use that to calculate checksum
+//	MEMPROG_CMD_PROG_VERIFY             = 0x11,
 
-	// IN
-	//  P1: Start address
-	//  P2: Length
-	// OUT
-	//  None
-	MEMPROG_CMD_VERIFY                  = 0X12,
 
 
 
@@ -90,6 +84,13 @@ typedef enum __attribute__((__packed__)) {
 	//	P2: buffer_base_address
 	//	P3: (NumBuffers << 24) | BufferSize
 	MEMPROG_CMD_QUERY_CAP               = 0x80,
+
+	// IN
+	//  P2: Total Length (to know when all buffers have been received from host)
+	// OUT
+	//  P1: 32-bit checksum of all data verified
+	//  All received buffers are filled with the memory contents based on BDT address and length
+	MEMPROG_CMD_VERIFY                  = 0x81,
 } MEMPROG_CMD;
 
 typedef enum __attribute__((__packed__)) {
