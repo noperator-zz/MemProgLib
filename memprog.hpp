@@ -125,7 +125,7 @@ public:
 		MemProg * inst;
 
 		// if we have the token
-		if (AcquireToken(TOKEN_TIMEOUT_MS)) {
+		if (TryAcquireToken()) {
 			bool released = false;
 
 			lputs("sr "); lputh1(Param->Status); lputh1(Param->Interface); lend();
@@ -243,7 +243,7 @@ protected:
 	virtual inline void CMD_MASS_ERASE() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_ERASE_RANGE() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_PROG() { DEFAULT_HANDLER(); }
-	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
+//	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_VERIFY() { DEFAULT_HANDLER(); }
 
 	static uint8_t * GetBufferAddress(uint8_t BufferIndex) {
@@ -385,8 +385,8 @@ private:
 				return &MemProg::CMD_ERASE_RANGE;
 			case MEMPROG_CMD_PROG:
 				return &MemProg::CMD_PROG;
-			case MEMPROG_CMD_PROG_VERIFY:
-				return &MemProg::CMD_PROG_VERIFY;
+			case MEMPROG_CMD_VERIFY:
+				return &MemProg::CMD_VERIFY;
 
 			// Interface-specific commands
 			default:
@@ -400,31 +400,18 @@ private:
 		__asm volatile("isb");
 	}
 
-	static bool AcquireToken(uint32_t timeout_ms=0xFFFFFFFF) {
-		uint32_t t = time_ms();
-
-		lputs("wt\n");
+	static bool TryAcquireToken() {
+//		lputs("wt\n");
 		dset(PIN_ACQUIRE, true);
 
-		while (Param->Token != MEMPROG_TOKEN_TARGET) {
-			if (!timeout_ms) {
-				dset(PIN_ACQUIRE, false);
-				return false;
-			}
-
-			uint32_t delta = time_ms() - t;
-
-			if (delta > timeout_ms) {
-//				lputs("TOKEN TIMEOUT "); lputh4(delta); lend();
-				dset(PIN_ACQUIRE, false);
-				return false;
-			}
+		if (Param->Token == MEMPROG_TOKEN_TARGET) {
+			dset(PIN_ACQUIRE, false);
+			lputs("at\n");
+			dset(PIN_TOKEN, true);
+			return true;
 		}
-
-		lputs("at\n");
 		dset(PIN_ACQUIRE, false);
-		dset(PIN_TOKEN, true);
-		return true;
+		return false;
 	}
 
 	static void ReleaseToken() {
