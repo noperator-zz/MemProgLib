@@ -36,7 +36,7 @@ private:
 	static constexpr uint32_t HANDLER_TIMEOUT_MS = 30;
 	// Maximum duration to wait for the token before giving up and returning to test shell
 	static constexpr uint32_t TOKEN_TIMEOUT_MS = 10;
-	static constexpr uint8_t hex[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+	static constexpr uint8_t hex[] = "0123456789ABCDEF";
 
 protected:
 	// Optional debug pin write function.
@@ -81,10 +81,10 @@ protected:
 	}
 	static void lputh4(uint32_t v, bool space=true) {
 #ifdef MEMPROG_LOGGING
-		lputh1((uint8_t) (v >> 24), false);
-		lputh1((uint8_t) (v >> 16), false);
-		lputh1((uint8_t) (v >> 8), false);
-		lputh1((uint8_t) v, space);
+		lputh1(v >> 24, false);
+		lputh1(v >> 16, false);
+		lputh1(v >> 8, false);
+		lputh1(v, space);
 #endif
 	}
 	void log(const char *s) const {
@@ -289,9 +289,8 @@ protected:
 		log("acquire -\n");
 	}
 
-	void GetNextFullBuffer(int * BufferIndex, uint32_t *Address, uint32_t *Length) const {
+	void GetNextFullBuffer(int * BufferIndex, uint8_t *RXSequence, uint32_t *Address, uint32_t *Length) const {
 		// Find a full buffer assigned to this interface. If there are multiple, return the one with the lowest address
-		*Address = 0xFFFFFFFF;
 		*BufferIndex = -1;
 
 		uint8_t i;
@@ -302,10 +301,18 @@ protected:
 				continue;
 			}
 			memory_sync();
-			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Interface == Interface && bdt.Address < *Address) {
+			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Interface == Interface && (bdt.Sequence == *RXSequence || bdt.Sequence & 0x80)) {
 				*Address = bdt.Address;
 				*Length = bdt.Length;
 				*BufferIndex = i;
+
+				if (bdt.Sequence & 0x80) {
+					*RXSequence = 0x80;
+				} else {
+					*RXSequence = (*RXSequence + 1) % 0x80;
+				}
+
+				break;
 			}
 		}
 		dset(PIN_BUFFER, false);
@@ -316,16 +323,20 @@ protected:
 		}
 	}
 
-	void FillBuffer(uint8_t BufferIndex, uint32_t Address, uint32_t Length) const {
+	void FillBuffer(uint8_t BufferIndex, uint8_t *TXSequence, uint32_t Address, uint32_t Length) const {
 		log("fill "); lputh1(BufferIndex); lend();
 //		dset(PIN_BUFFER, true);
+		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FULL;
 		BufferDescriptors[BufferIndex].Interface = Interface;
+		BufferDescriptors[BufferIndex].Sequence = *TXSequence;
 		BufferDescriptors[BufferIndex].Address = Address;
 		BufferDescriptors[BufferIndex].Length = Length;
-		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FULL;
 		memory_sync();
 		BufferDescriptors[BufferIndex].Token = MEMPROG_TOKEN_HOST;
 //		dset(PIN_BUFFER, false);
+		if (!(*TXSequence & 0x80)) {
+			*TXSequence = (*TXSequence + 1) % 0x80;
+		}
 	}
 
 	void ReleaseBuffer(uint8_t BufferIndex) const {

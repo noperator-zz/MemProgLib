@@ -134,8 +134,12 @@ typedef struct __attribute__((__packed__)) {
 	MEMPROG_BUFFER_STATUS Status: 8U;
 	// Which interface the buffer is currently used by (valid if status != free)
 	uint8_t Interface: 8U;
-	//
-	uint8_t _RESERVERD1: 8U;
+	// 0x00 - 0x7F: Sequence number. Rolls over to 0x00 after 0x7F. 0x80 indicates that this is the last buffer
+	// The sequence number is set by the buffer transmitter, to ensure that the received can receive them in the correct
+	//  order (since multiple buffers may be written before the other side reads them). The sequence number should be
+	//  set to 0x00 for the first buffer sent out after starting a new command, and set to 0x80 for the last buffer
+	//  being sent out. If more than 0x80 buffers are being transmitted, roll over to 0x00
+	uint8_t Sequence: 8U;
 
 	// pad the entire structure up to a power of 2, 16 bytes
 	uint32_t _PADDING1;
