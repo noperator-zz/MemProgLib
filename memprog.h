@@ -57,14 +57,14 @@ typedef enum __attribute__((__packed__)) {
 
 	// IN
 	//  P1: //Start address (obsoleted by BDTs)
-	//  P2: Total length (to know when all buffers have been received from host)
+	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
 	// OUT
 	//  None
 	MEMPROG_CMD_PROG                    = 0x10,
 
 //	// IN
 //	//  P1: //Start address (obsoleted by BDTs)
-//	//  P2: Total length (to know when all buffers have been received from host)
+//	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
 //	// OUT
 //	//  P1: checksum of data
 //	// Target should read back after programming and use that to calculate checksum
@@ -86,7 +86,7 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_CMD_QUERY_CAP               = 0x80,
 
 	// IN
-	//  P2: Total Length (to know when all buffers have been received from host)
+	//  P2: //Total Length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
 	// OUT
 	//  P1: 32-bit checksum of all data verified
 	//  All received buffers are filled with the memory contents based on BDT address and length
