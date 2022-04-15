@@ -147,6 +147,9 @@ public:
 				// Check if a handler for this command exists
 				if (!(inst->CurrentHandler = inst->BaseGetHandler(Param->Command))) {
 					inst->LocalParam.Status = MEMPROG_STATUS_ERR_IMPLEMENTATION;
+				} else {
+					inst->TXSequence = 0;
+					inst->RXSequence = 0;
 				}
 			} else if (Param->Status == _MEMPROG_STATUS_IDLE) {
 				// If not, check if anything needs to be returned
@@ -183,12 +186,13 @@ public:
 		uint32_t start_time = time_ms();
 		uint8_t i = 0;
 		for (; (inst = Interfaces[i]); i++) {
-			if ( ! (inst->Active && inst->LocalParam.Status < MEMPROG_STATUS_OK)) {
+//			if ( ! (inst->Active && inst->LocalParam.Status < MEMPROG_STATUS_OK)) {
+			if (!inst->Active || inst->LocalParam.Status >= MEMPROG_STATUS_OK) {
 				continue;
 			}
 
 			// if status hasn't been set yet, keep running the command
-			inst->log("run "); lputh1(inst->LocalParam.Command); lend();
+//			inst->log("run "); lputh1(inst->LocalParam.Command); lend();
 //			dset(PIN_HANDLER, true);
 			(inst->*inst->CurrentHandler)();
 //			dset(PIN_HANDLER, false);
@@ -286,12 +290,13 @@ protected:
 			}
 		}
 //		dset(PIN_BUFFER, false);
-		log("acquire -\n");
+//		log("acquire -\n");
 	}
 
-	void GetNextFullBuffer(int * BufferIndex, uint8_t *RXSequence, uint32_t *Address, uint32_t *Length) const {
+	void GetNextFullBuffer(int * BufferIndex, bool *Last, uint32_t *Address, uint32_t *Length) {
 		// Find a full buffer assigned to this interface. If there are multiple, return the one with the lowest address
 		*BufferIndex = -1;
+		*Last = false;
 
 		uint8_t i;
 		dset(PIN_BUFFER, true);
@@ -301,17 +306,17 @@ protected:
 				continue;
 			}
 			memory_sync();
-			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Interface == Interface && (bdt.Sequence == *RXSequence || bdt.Sequence & 0x80)) {
+			if (bdt.Status == MEMPROG_BUFFER_STATUS_FULL && bdt.Interface == Interface && (bdt.Sequence == RXSequence || bdt.Sequence & 0x80)) {
 				*Address = bdt.Address;
 				*Length = bdt.Length;
 				*BufferIndex = i;
 
 				if (bdt.Sequence & 0x80) {
-					*RXSequence = 0x80;
+					RXSequence = 0x80;
+					*Last = true;
 				} else {
-					*RXSequence = (*RXSequence + 1) % 0x80;
+					RXSequence = (RXSequence + 1) % 0x80;
 				}
-
 				break;
 			}
 		}
@@ -319,23 +324,27 @@ protected:
 		if (*BufferIndex >= 0) {
 			log("get "); lputh1(*BufferIndex); lputh4(*Address); lputh4(*Length); lend();
 		} else {
-			log("get -\n");
+//			log("get -\n");
 		}
 	}
 
-	void FillBuffer(uint8_t BufferIndex, uint8_t *TXSequence, uint32_t Address, uint32_t Length) const {
-		log("fill "); lputh1(BufferIndex); lend();
+	void FillBuffer(uint8_t BufferIndex, bool Last, uint32_t Address, uint32_t Length) {
 //		dset(PIN_BUFFER, true);
+		if (Last) {
+			TXSequence = 0x80;
+		}
+		log("fill "); lputh1(BufferIndex); lputh1(TXSequence); lend();
+
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FULL;
 		BufferDescriptors[BufferIndex].Interface = Interface;
-		BufferDescriptors[BufferIndex].Sequence = *TXSequence;
+		BufferDescriptors[BufferIndex].Sequence = TXSequence;
 		BufferDescriptors[BufferIndex].Address = Address;
 		BufferDescriptors[BufferIndex].Length = Length;
 		memory_sync();
 		BufferDescriptors[BufferIndex].Token = MEMPROG_TOKEN_HOST;
 //		dset(PIN_BUFFER, false);
-		if (!(*TXSequence & 0x80)) {
-			*TXSequence = (*TXSequence + 1) % 0x80;
+		if (!(TXSequence & 0x80)) {
+			TXSequence = (TXSequence + 1) % 0x80;
 		}
 	}
 
@@ -355,7 +364,7 @@ protected:
 	static void PassBuffers() {
 		// Pass the token of any unused buffers
 		uint8_t i;
-		lputs("pass\n");
+//		lputs("pass\n");
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Token != MEMPROG_TOKEN_TARGET) {
@@ -372,6 +381,9 @@ private:
 	CMD_FUNC CurrentHandler;
 	bool Active;
 	uint8_t Interface;
+
+	uint8_t TXSequence;
+	uint8_t RXSequence;
 
 	static inline MemProg * CurrentInterface = nullptr;
 
