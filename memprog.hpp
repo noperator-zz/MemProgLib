@@ -248,7 +248,8 @@ protected:
 	virtual inline void CMD_ERASE_RANGE() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_PROG() { DEFAULT_HANDLER(); }
 //	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
-	virtual inline void CMD_VERIFY() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_VERIFY_CHECKSUM() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_VERIFY_READBACK() { DEFAULT_HANDLER(); }
 
 	static uint8_t * GetBufferAddress(uint8_t BufferIndex) {
 		return const_cast<uint8_t *>(Buffers + BufferIndex * BufferSize);
@@ -408,8 +409,10 @@ private:
 				return &MemProg::CMD_ERASE_RANGE;
 			case MEMPROG_CMD_PROG:
 				return &MemProg::CMD_PROG;
-			case MEMPROG_CMD_VERIFY:
-				return &MemProg::CMD_VERIFY;
+			case MEMPROG_CMD_VERIFY_CHECKSUM:
+				return &MemProg::CMD_VERIFY_CHECKSUM;
+			case MEMPROG_CMD_VERIFY_READBACK:
+				return &MemProg::CMD_VERIFY_READBACK;
 
 			// Interface-specific commands
 			default:

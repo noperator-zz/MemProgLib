@@ -86,11 +86,16 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_CMD_QUERY_CAP               = 0x80,
 
 	// IN
-	//  P2: //Total Length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
+	//  Buffers: Addresses and lengths of sections to verify
 	// OUT
 	//  P1: 32-bit checksum of all data verified
-	//  All received buffers are filled with the memory contents based on BDT address and length
-	MEMPROG_CMD_VERIFY                  = 0x81,
+	MEMPROG_CMD_VERIFY_CHECKSUM         = 0x81,
+
+	// IN
+	//  Buffers: Addresses and lengths of sections to verify
+	// OUT
+	//  Buffers: Filled with data from the provided addresses
+	MEMPROG_CMD_VERIFY_READBACK         = 0x82,
 } MEMPROG_CMD;
 
 typedef enum __attribute__((__packed__)) {
