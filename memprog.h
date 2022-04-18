@@ -56,21 +56,10 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_CMD_ERASE_RANGE             = 0x01,
 
 	// IN
-	//  P1: //Start address (obsoleted by BDTs)
-	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
+	//  Buffers: Provide the data to program
 	// OUT
 	//  None
 	MEMPROG_CMD_PROG                    = 0x10,
-
-//	// IN
-//	//  P1: //Start address (obsoleted by BDTs)
-//	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
-//	// OUT
-//	//  P1: checksum of data
-//	// Target should read back after programming and use that to calculate checksum
-//	MEMPROG_CMD_PROG_VERIFY             = 0x11,
-
-
 
 
 	// Bit 7 indicates that the host should read from buffers
