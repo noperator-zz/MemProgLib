@@ -425,15 +425,15 @@ private:
 
 	static bool TryAcquireToken() {
 //		lputs("wt\n");
-		dset(PIN_ACQUIRE, true);
+//		dset(PIN_ACQUIRE, true);
 
 		if (Param->Token == MEMPROG_TOKEN_TARGET) {
-			dset(PIN_ACQUIRE, false);
+//			dset(PIN_ACQUIRE, false);
 			lputs("at\n");
 			dset(PIN_TOKEN, true);
 			return true;
 		}
-		dset(PIN_ACQUIRE, false);
+//		dset(PIN_ACQUIRE, false);
 		return false;
 	}
 
