@@ -40,14 +40,14 @@ private:
 
 protected:
 	// Optional debug pin write function.
-	// Pin 0: High while waiting for token
-	static constexpr uint8_t PIN_ACQUIRE = 0;
-	// Pin 1: High while holding token
-	static constexpr uint8_t PIN_TOKEN = 1;
-	// Pin 2: High while waiting for a buffer operation (find full, find empty, or change status)
-	static constexpr uint8_t PIN_BUFFER = 2;
-	// Pin 3: High while any handler is running
-	static constexpr uint8_t PIN_HANDLER = 3;
+	// Pin 0: High while holding token
+	static constexpr uint8_t PIN_BUFFER1 = 0;
+	// Pin 1: High while waiting for a buffer operation (find full, find empty, or change status)
+	static constexpr uint8_t PIN_BUFFER0 = 1;
+	// Pin 2: High while handler 1 is running
+	static constexpr uint8_t PIN_HADNLER1 = 2;
+	// Pin 3: High while handler 0 is running
+	static constexpr uint8_t PIN_HANDLER0 = 3;
 	static void (* const dset)(uint8_t pin, bool state);
 
 	static void lputc(uint8_t c) {
@@ -193,9 +193,9 @@ public:
 
 			// if status hasn't been set yet, keep running the command
 //			inst->log("run "); lputh1(inst->LocalParam.Command); lend();
-//			dset(PIN_HANDLER, true);
+			dset(PIN_HANDLER0 - i, true);
 			(inst->*inst->CurrentHandler)();
-//			dset(PIN_HANDLER, false);
+			dset(PIN_HANDLER0 - i, false);
 
 			// Status will be START the first time this is called. Handlers can use this fact to reset their state
 			// After the first run, change Status to something else, unless it has already changed to a valid return value
@@ -249,7 +249,7 @@ protected:
 	virtual inline void CMD_PROG() { DEFAULT_HANDLER(); }
 //	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_VERIFY_CHECKSUM() { DEFAULT_HANDLER(); }
-	virtual inline void CMD_VERIFY_READBACK() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_READ() { DEFAULT_HANDLER(); }
 
 	static uint8_t * GetBufferAddress(uint8_t BufferIndex) {
 		return const_cast<uint8_t *>(Buffers + BufferIndex * BufferSize);
@@ -290,8 +290,11 @@ protected:
 				*BufferIndex = i;
 			}
 		}
-//		dset(PIN_BUFFER, false);
-//		log("acquire -\n");
+		if (*BufferIndex >= 0) {
+			dset(PIN_BUFFER0 - Interface, false);
+		} else {
+			dset(PIN_BUFFER0 - Interface, true);
+		}
 	}
 
 	void GetNextFullBuffer(int * BufferIndex, bool *Last, uint32_t *Address, uint32_t *Length) {
@@ -300,7 +303,6 @@ protected:
 		*Last = false;
 
 		uint8_t i;
-		dset(PIN_BUFFER, true);
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Token != MEMPROG_TOKEN_TARGET) {
@@ -321,16 +323,16 @@ protected:
 				break;
 			}
 		}
-		dset(PIN_BUFFER, false);
 		if (*BufferIndex >= 0) {
+			dset(PIN_BUFFER0 - Interface, false);
 			log("get "); lputh1(*BufferIndex); lputh4(*Address); lputh4(*Length); lend();
 		} else {
+			dset(PIN_BUFFER0 - Interface, true);
 //			log("get -\n");
 		}
 	}
 
 	void FillBuffer(uint8_t BufferIndex, bool Last, uint32_t Address, uint32_t Length) {
-//		dset(PIN_BUFFER, true);
 		if (Last) {
 			TXSequence = 0x80;
 		}
@@ -343,7 +345,6 @@ protected:
 		BufferDescriptors[BufferIndex].Length = Length;
 		memory_sync();
 		BufferDescriptors[BufferIndex].Token = MEMPROG_TOKEN_HOST;
-//		dset(PIN_BUFFER, false);
 		if (!(TXSequence & 0x80)) {
 			TXSequence = (TXSequence + 1) % 0x80;
 		}
@@ -355,13 +356,12 @@ protected:
 			return;
 		}
 		log("release "); lputh1(BufferIndex); lend();
-//		dset(PIN_BUFFER, true);
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FREE;
 		memory_sync();
 		BufferDescriptors[BufferIndex].Token = MEMPROG_TOKEN_HOST;
-//		dset(PIN_BUFFER, false);
 	}
 
+	// FIXME release orphaned buffers as well (ones that we hold the token for but the interface is not active)
 	static void PassBuffers() {
 		// Pass the token of any unused buffers
 		uint8_t i;
@@ -411,8 +411,8 @@ private:
 				return &MemProg::CMD_PROG;
 			case MEMPROG_CMD_VERIFY_CHECKSUM:
 				return &MemProg::CMD_VERIFY_CHECKSUM;
-			case MEMPROG_CMD_VERIFY_READBACK:
-				return &MemProg::CMD_VERIFY_READBACK;
+			case MEMPROG_CMD_READ:
+				return &MemProg::CMD_READ;
 
 			// Interface-specific commands
 			default:
@@ -433,7 +433,7 @@ private:
 		if (Param->Token == MEMPROG_TOKEN_TARGET) {
 //			dset(PIN_ACQUIRE, false);
 			lputs("at\n");
-			dset(PIN_TOKEN, true);
+//			dset(PIN_TOKEN, true);
 			return true;
 		}
 //		dset(PIN_ACQUIRE, false);
@@ -444,7 +444,7 @@ private:
 		lputs("rt\n");
 		memory_sync();
 		Param->Token = MEMPROG_TOKEN_HOST;
-		dset(PIN_TOKEN, false);
+//		dset(PIN_TOKEN, false);
 	}
 
 //	void ForceReleaseBuffers(uint8_t *NumBroken) const {
