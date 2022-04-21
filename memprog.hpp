@@ -94,6 +94,9 @@ protected:
 #endif
 	}
 
+
+
+
 public:
 	virtual ~MemProg() = default;
 
@@ -246,9 +249,8 @@ protected:
 	// stubs for global commands
 	virtual inline void CMD_MASS_ERASE() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_ERASE_RANGE() { DEFAULT_HANDLER(); }
-	virtual inline void CMD_PROG() { DEFAULT_HANDLER(); }
-//	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
-	virtual inline void CMD_VERIFY_CHECKSUM() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_PROG_VERIFY() { DEFAULT_HANDLER(); }
+	virtual inline void CMD_CRC() { DEFAULT_HANDLER(); }
 	virtual inline void CMD_READ() { DEFAULT_HANDLER(); }
 
 	static uint8_t * GetBufferAddress(uint8_t BufferIndex) {
@@ -407,10 +409,10 @@ private:
 				return &MemProg::CMD_MASS_ERASE;
 			case MEMPROG_CMD_ERASE_RANGE:
 				return &MemProg::CMD_ERASE_RANGE;
-			case MEMPROG_CMD_PROG:
-				return &MemProg::CMD_PROG;
-			case MEMPROG_CMD_VERIFY_CHECKSUM:
-				return &MemProg::CMD_VERIFY_CHECKSUM;
+			case MEMPROG_CMD_PROG_VERIFY:
+				return &MemProg::CMD_PROG_VERIFY;
+			case MEMPROG_CMD_CRC:
+				return &MemProg::CMD_CRC;
 			case MEMPROG_CMD_READ:
 				return &MemProg::CMD_READ;
 

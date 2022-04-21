@@ -56,25 +56,14 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_CMD_ERASE_RANGE             = 0x01,
 
 	// IN
-	//  P1: //Start address (obsoleted by BDTs)
-	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
+	//  Buffers: Data to program
 	// OUT
-	//  None
-	MEMPROG_CMD_PROG                    = 0x10,
-
-//	// IN
-//	//  P1: //Start address (obsoleted by BDTs)
-//	//  P2: //Total length (to know when all buffers have been received from host) (obsoleted by 'last' flag)
-//	// OUT
-//	//  P1: checksum of data
-//	// Target should read back after programming and use that to calculate checksum
-//	MEMPROG_CMD_PROG_VERIFY             = 0x11,
+	//  P1: CRC32 of all data read
+	MEMPROG_CMD_PROG_VERIFY             = 0x10,
 
 
 
-
-	// Bit 7 indicates that the host should read from buffers
-	// In general, 'read' type commands should set this bit, even if they don't use buffers
+	// As a convention, 'read' type commands start at 0x80
 
 	// IN
 	//  None
@@ -86,10 +75,10 @@ typedef enum __attribute__((__packed__)) {
 	MEMPROG_CMD_QUERY_CAP               = 0x80,
 
 	// IN
-	//  Buffers: Addresses and lengths of sections to verify
+	//  Buffers: Addresses and lengths of sections to read and generate CRC from
 	// OUT
-	//  P1: 32-bit checksum of all data verified
-	MEMPROG_CMD_VERIFY_CHECKSUM         = 0x81,
+	//  P1: CRC32 of all data read
+	MEMPROG_CMD_CRC                     = 0x81,
 
 	// IN
 	//  Buffers: Addresses and lengths of sections to read
