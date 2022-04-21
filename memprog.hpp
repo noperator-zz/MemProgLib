@@ -3,14 +3,76 @@
 #include <cstring>
 #include <string>
 
-// Base class which defines the constructor and provides stubs for command methods
-class MemProg {
+class MemProgDebugMixin {
 private:
 	// NOTE ============= Configuration options
-#define MEMPROG_LOGGING
-#define MEMPROG_DEBUGGING
+//#define MEMPROG_LOGGING
+//#define MEMPROG_DEBUGGING
+
+	// Optional debug putc function.
+	static void (* const dputc)(uint8_t c);
+	// Optional debug pin write function.
+	static void (* const dset)(uint8_t pin, bool state);
 	// NOTE ===================================
 
+	static constexpr uint8_t hex[] = "0123456789ABCDEF";
+
+protected:
+//	static constexpr uint8_t PIN_BUFFER1 = 0;
+//	static constexpr uint8_t PIN_BUFFER0 = 1;
+//	static constexpr uint8_t PIN_HANDLER1 = 2;
+//	static constexpr uint8_t PIN_HANDLER0 = 3;
+
+	static void DBGSET(uint8_t pin, bool state) {
+#ifdef MEMPROG_DEBUGGING
+		if (dset) {
+			dset(pin, state);
+		}
+#endif
+	}
+
+	static void DBGC(uint8_t c) {
+#ifdef MEMPROG_LOGGING
+		if (dputc) {
+			dputc(c);
+		}
+#endif
+	}
+	static void DBGS(const char* s) {
+#ifdef MEMPROG_LOGGING
+		if (dputc) {
+			while (*s) {
+				dputc(*s);
+				s++;
+			}
+		}
+#endif
+	}
+	static void DBGEND() {
+#ifdef MEMPROG_LOGGING
+		DBGC('\n');
+#endif
+	}
+	static void DBGH1(uint8_t v, bool space= true) {
+#ifdef MEMPROG_LOGGING
+		DBGC(hex[v >> 4]);
+		DBGC(hex[v & 0x0F]);
+		if (space) DBGC(' ');
+#endif
+	}
+	static void DBGH4(uint32_t v, bool space= true) {
+#ifdef MEMPROG_LOGGING
+		DBGH1(v >> 24, false);
+		DBGH1(v >> 16, false);
+		DBGH1(v >> 8, false);
+		DBGH1(v, space);
+#endif
+	}
+};
+
+// Base class which defines the constructor and provides stubs for command methods
+class MemProg : public MemProgDebugMixin {
+private:
 	// NOTE ============= These must be defined in a source file in the MCU firmware
 	// Array of base pointers to the MemProg subclass instances
 	static MemProg * const Interfaces[];
@@ -27,88 +89,13 @@ private:
 	static const uint32_t NumBuffers;
 	// Timekeeping function. Return millseconds.
 	static uint32_t (* const volatile time_ms)();
-
-	// Optional debug putc function. Set as nullptr to disable debugging
-	static void (* const dputc)(uint8_t c);
 	// NOTE ========================================================================
 
+	static inline uint8_t NumInterfaces = 0;
 	// Maximum duration `StaticRun` should run for
-	static constexpr uint32_t HANDLER_TIMEOUT_MS = 30;
+	static constexpr uint32_t HANDLER_TIMEOUT_MS           = 30;
 	// Maximum duration to wait for the token before giving up and returning to test shell
-	static constexpr uint32_t TOKEN_TIMEOUT_MS = 10;
-	static constexpr uint8_t hex[] = "0123456789ABCDEF";
-
-protected:
-	// Optional debug pin write function.
-	// Pin 0: High while holding token
-	static constexpr uint8_t PIN_BUFFER1 = 0;
-	// Pin 1: High while waiting for a buffer operation (find full, find empty, or change status)
-	static constexpr uint8_t PIN_BUFFER0 = 1;
-	// Pin 2: High while handler 1 is running
-	static constexpr uint8_t PIN_HADNLER1 = 2;
-	// Pin 3: High while handler 0 is running
-	static constexpr uint8_t PIN_HANDLER0 = 3;
-	static void (* const dset)(uint8_t pin, bool state);
-
-	static void lputc(uint8_t c) {
-#ifdef MEMPROG_LOGGING
-		if (dputc) {
-			dputc(c);
-		}
-#endif
-	}
-	static void lputs(const char* s) {
-#ifdef MEMPROG_LOGGING
-		if (dputc) {
-			while (*s) {
-				dputc(*s);
-				s++;
-			}
-		}
-#endif
-	}
-	static void lend() {
-#ifdef MEMPROG_LOGGING
-		lputc('\n');
-#endif
-	}
-	static void lputh1(uint8_t v, bool space=true) {
-#ifdef MEMPROG_LOGGING
-		lputc(hex[v >> 4]);
-		lputc(hex[v & 0x0F]);
-		if (space) lputc(' ');
-#endif
-	}
-	static void lputh4(uint32_t v, bool space=true) {
-#ifdef MEMPROG_LOGGING
-		lputh1(v >> 24, false);
-		lputh1(v >> 16, false);
-		lputh1(v >> 8, false);
-		lputh1(v, space);
-#endif
-	}
-	void log(const char *s) const {
-#ifdef MEMPROG_LOGGING
-		lputh1(Interface);
-		lputs(s);
-#endif
-	}
-
-	static uint32_t CRC32(uint8_t *Data, uint32_t Length, uint32_t LastCRC= 0) {
-		int8_t i;
-		uint32_t Mask;
-
-		uint32_t CRC = ~LastCRC;
-		while (Length--) {
-			CRC = CRC ^ *Data;
-			Data++;
-			for (i = 7; i >= 0; i--) {
-				Mask = -(CRC & 1);
-				CRC = (CRC >> 1) ^ (0xEDB88320 & Mask);
-			}
-		}
-		return ~CRC;
-	}
+	static constexpr uint32_t TOKEN_TIMEOUT_MS             = 10;
 
 public:
 	virtual ~MemProg() = default;
@@ -124,7 +111,7 @@ public:
 
 		// Initialize each interface
 		for (; *ptr; ptr++) {
-			(*ptr)->Interface = (ptr - Interfaces);
+			(*ptr)->Interface = NumInterfaces++;
 			(*ptr)->Init();
 		}
 
@@ -139,7 +126,10 @@ public:
 		if (TryAcquireToken()) {
 			bool released = false;
 
-			lputs("sr "); lputh1(Param->Status); lputh1(Param->Interface); lend();
+			DBGS("sr ");
+			DBGH1(Param->Status);
+			DBGH1(Param->Interface);
+			DBGEND();
 
 			// Check if host wants to start a command
 			if (Param->Status == _MEMPROG_STATUS_START) {
@@ -148,7 +138,10 @@ public:
 				inst->Active = true;
 				memcpy(&inst->LocalParam, (const void *)Param, sizeof(LocalParam));
 
-				inst->log("start "); lputh1(inst->LocalParam.Command); lend();
+				DBGH1(inst->Interface);
+				DBGS("start ");
+				DBGH1(inst->LocalParam.Command);
+				DBGEND();
 
 				// Acknowledge the command by changing status to IDLE and passing token back after copying Params
 				Param->Status = _MEMPROG_STATUS_ACK;
@@ -168,7 +161,10 @@ public:
 				for (; (inst = Interfaces[i]); i++) {
 					// if status has been set, the command has finished; notify the host by modifying Param.Status
 					if (inst->Active && inst->LocalParam.Status >= MEMPROG_STATUS_OK) {
-						inst->log("return "); lputh1(inst->LocalParam.Command); lend();
+						DBGH1(inst->Interface);
+						DBGS("return ");
+						DBGH1(inst->LocalParam.Command);
+						DBGEND();
 
 						inst->Active = false;
 						inst->CurrentHandler = nullptr;
@@ -185,7 +181,9 @@ public:
 				}
 			} else {
 				// host may accidentally pass us the token before reading out return data. Do nothing in this case
-				lputs("BAD STATUS "); lputh1(Param->Status); lend();
+				DBGS("BAD STATUS ");
+				DBGH1(Param->Status);
+				DBGEND();
 			}
 
 			if (!released) {
@@ -197,32 +195,24 @@ public:
 		uint32_t start_time = time_ms();
 		uint8_t i = 0;
 		for (; (inst = Interfaces[i]); i++) {
-//			if ( ! (inst->Active && inst->LocalParam.Status < MEMPROG_STATUS_OK)) {
 			if (!inst->Active || inst->LocalParam.Status >= MEMPROG_STATUS_OK) {
 				continue;
 			}
 
 			// if status hasn't been set yet, keep running the command
-//			inst->log("run "); lputh1(inst->LocalParam.Command); lend();
-			dset(PIN_HANDLER0 - i, true);
+//			DBGSET(PIN_HANDLER0 - i, true);
 			(inst->*inst->CurrentHandler)();
-			dset(PIN_HANDLER0 - i, false);
+//			DBGSET(PIN_HANDLER0 - i, false);
 
 			// Status will be START the first time this is called. Handlers can use this fact to reset their state
 			// After the first run, change Status to something else, unless it has already changed to a valid return value
 			if (inst->LocalParam.Status < MEMPROG_STATUS_OK) {
 				inst->LocalParam.Status = _MEMPROG_STATUS_IDLE;
 			} else {
-				inst->log("finish "); lputh1(inst->LocalParam.Command); lend();
-
-//				uint8_t NumBroken;
-//				inst->ForceReleaseBuffers(&NumBroken);
-//				if (NumBroken) {
-//					// Tack original status onto Code
-//					inst->LocalParam.Code = (inst->LocalParam.Code << 8) | ((uint8_t)inst->LocalParam.Status);
-//					inst->LocalParam.Status = _MEMPROG_STATUS_BUFFER;
-//					inst->log("BROKEN "); lputh1(NumBroken); lend();
-//				}
+				DBGH1(inst->Interface);
+				DBGS("finish ");
+				DBGH1(inst->LocalParam.Command);
+				DBGEND();
 			}
 
 			uint32_t elapsed = time_ms() - start_time;
@@ -230,7 +220,9 @@ public:
 			if (elapsed > HANDLER_TIMEOUT_MS) {
 				if (elapsed > (HANDLER_TIMEOUT_MS * 2)) {
 					// only print error message if significantly overran (double)
-					lputs("LOOP OVERRUN "); lputh4(elapsed); lend();
+					DBGS("LOOP OVERRUN ");
+					DBGH4(elapsed);
+					DBGEND();
 				}
 				break;
 			}
@@ -244,7 +236,7 @@ private:
 	inline void DEFAULT_HANDLER() { LocalParam.Status = MEMPROG_STATUS_ERR_IMPLEMENTATION; }
 
 protected:
-	MEMPROG_PARAM LocalParam;
+	MEMPROG_PARAM LocalParam {};
 
 	using CMD_FUNC = void (MemProg::*)();
 
@@ -265,24 +257,11 @@ protected:
 		return const_cast<uint8_t *>(Buffers + BufferIndex * BufferSize);
 	}
 
-
-	// --- NOTE these four BDT functions may be called while the token is not held
-	// ---  Should be OK because the host and target access to BDTs will not overlap in a destructive manner
-	// ---  During a host write command:
-	// ---   - host will only write to BDT once Status == FREE
-	// ---   - target will only read from BDT once Status == FULL
-	// ---   - target will only write to BDT to change Status back to FREE or PENDING
-	// ---  During a host read command:
-	// ---   - target will only write from BDT once Status == FREE
-	// ---   - host will only read from BDT once Status == FULL
-	// ---   - host will only write to BDT to change Status back to FREE or PENDING
-
 	void AcquireBuffer(int *BufferIndex, const uint8_t ** Buffer, uint32_t *Size) const {
 		// Loop through BDTs until a free one is found
 		uint8_t i;
 
 		*BufferIndex = -1;
-//		dset(PIN_BUFFER, true);
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Token != MEMPROG_TOKEN_TARGET) {
@@ -296,19 +275,22 @@ protected:
 				*Buffer = const_cast<uint8_t *>(Buffers + i * BufferSize);
 				*Size = BufferSize;
 
-				log("acquire "); lputh1(i); lend();
+				DBGH1(Interface);
+				DBGS("acquire ");
+				DBGH1(i);
+				DBGEND();
 				*BufferIndex = i;
 			}
 		}
-		if (*BufferIndex >= 0) {
-			dset(PIN_BUFFER0 - Interface, false);
-		} else {
-			dset(PIN_BUFFER0 - Interface, true);
-		}
+//		if (*BufferIndex >= 0) {
+//			DBGSET(PIN_BUFFER0 - Interface, false);
+//		} else {
+//			DBGSET(PIN_BUFFER0 - Interface, true);
+//		}
 	}
 
 	void GetNextFullBuffer(int * BufferIndex, bool *Last, uint32_t *Address, uint32_t *Length) {
-		// Find a full buffer assigned to this interface. If there are multiple, return the one with the lowest address
+		// Find a full buffer with the matching sequence number assigned to this interface
 		*BufferIndex = -1;
 		*Last = false;
 
@@ -334,11 +316,15 @@ protected:
 			}
 		}
 		if (*BufferIndex >= 0) {
-			dset(PIN_BUFFER0 - Interface, false);
-			log("get "); lputh1(*BufferIndex); lputh4(*Address); lputh4(*Length); lend();
+//			DBGSET(PIN_BUFFER0 - Interface, false);
+			DBGH1(Interface);
+			DBGS("get ");
+			DBGH1(*BufferIndex);
+			DBGH4(*Address);
+			DBGH4(*Length);
+			DBGEND();
 		} else {
-			dset(PIN_BUFFER0 - Interface, true);
-//			log("get -\n");
+//			DBGSET(PIN_BUFFER0 - Interface, true);
 		}
 	}
 
@@ -346,7 +332,11 @@ protected:
 		if (Last) {
 			TXSequence = 0x80;
 		}
-		log("fill "); lputh1(BufferIndex); lputh1(TXSequence); lend();
+		DBGH1(Interface);
+		DBGS("fill ");
+		DBGH1(BufferIndex);
+		DBGH1(TXSequence);
+		DBGEND();
 
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FULL;
 		BufferDescriptors[BufferIndex].Interface = Interface;
@@ -361,21 +351,23 @@ protected:
 	}
 
 	void ReleaseBuffer(uint8_t BufferIndex) const {
+		DBGH1(Interface);
 		if (BufferIndex < 0) {
-			log("BAD RELEASE");
+			DBGS("BAD RELEASE");
 			return;
 		}
-		log("release "); lputh1(BufferIndex); lend();
+		DBGS("release ");
+		DBGH1(BufferIndex);
+		DBGEND();
+
 		BufferDescriptors[BufferIndex].Status = MEMPROG_BUFFER_STATUS_FREE;
 		memory_sync();
 		BufferDescriptors[BufferIndex].Token = MEMPROG_TOKEN_HOST;
 	}
 
-	// FIXME release orphaned buffers as well (ones that we hold the token for but the interface is not active)
 	static void PassBuffers() {
 		// Pass the token of any unused buffers
 		uint8_t i;
-//		lputs("pass\n");
 		for (i = 0; i < NumBuffers; i++) {
 			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
 			if (bdt.Token != MEMPROG_TOKEN_TARGET) {
@@ -384,19 +376,41 @@ protected:
 			memory_sync();
 			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE) {
 				bdt.Token = MEMPROG_TOKEN_HOST;
+			} else if ((bdt.Interface < NumInterfaces) && !Interfaces[bdt.Interface]->Active) {
+				// NOTE: this is an orphaned buffer
+				DBGS("Orphan buffer detected:");
+				DBGH1(i);
+				DBGH1(bdt.Interface);
+				DBGH1(bdt.Status);
+				DBGEND();
+				bdt.Token = MEMPROG_TOKEN_HOST;
 			}
 		}
 	}
 
+	static uint32_t CRC32(uint8_t *Data, uint32_t Length, uint32_t LastCRC= 0) {
+		int8_t i;
+		uint32_t Mask;
+
+		uint32_t CRC = ~LastCRC;
+		while (Length--) {
+			CRC = CRC ^ *Data;
+			Data++;
+			for (i = 7; i >= 0; i--) {
+				Mask = -(CRC & 1);
+				CRC = (CRC >> 1) ^ (0xEDB88320 & Mask);
+			}
+		}
+		return ~CRC;
+	}
+
 private:
-	CMD_FUNC CurrentHandler;
-	bool Active;
-	uint8_t Interface;
+	CMD_FUNC CurrentHandler = nullptr;
+	bool Active = false;
+	uint8_t Interface = 0;
 
-	uint8_t TXSequence;
-	uint8_t RXSequence;
-
-	static inline MemProg * CurrentInterface = nullptr;
+	uint8_t TXSequence = 0;
+	uint8_t RXSequence = 0;
 
 	void CMD_QUERY_CAP() {
 		LocalParam.Code = MEMPROG_VERSION;
@@ -437,41 +451,22 @@ private:
 	}
 
 	static bool TryAcquireToken() {
-//		lputs("wt\n");
-//		dset(PIN_ACQUIRE, true);
+//		DBGSET(PIN_ACQUIRE, true);
 
 		if (Param->Token == MEMPROG_TOKEN_TARGET) {
-//			dset(PIN_ACQUIRE, false);
-			lputs("at\n");
-//			dset(PIN_TOKEN, true);
+//			DBGSET(PIN_ACQUIRE, false);
+			DBGS("at\n");
+//			DBGSET(PIN_TOKEN, true);
 			return true;
 		}
-//		dset(PIN_ACQUIRE, false);
+//		DBGSET(PIN_ACQUIRE, false);
 		return false;
 	}
 
 	static void ReleaseToken() {
-		lputs("rt\n");
+		DBGS("rt\n");
 		memory_sync();
 		Param->Token = MEMPROG_TOKEN_HOST;
-//		dset(PIN_TOKEN, false);
+//		DBGSET(PIN_TOKEN, false);
 	}
-
-//	void ForceReleaseBuffers(uint8_t *NumBroken) const {
-//		// NOTE only call this when token is not needed
-//		uint8_t i;
-//		*NumBroken = 0;
-//
-//		AcquireToken();
-//		for (i = 0; i < NumBuffers; i++) {
-//			volatile MEMPROG_BDT &bdt = BufferDescriptors[i];
-//			if (bdt.Status == MEMPROG_BUFFER_STATUS_FREE || bdt.Interface != Interface) {
-//				continue;
-//			}
-//
-//			(*NumBroken)++;
-//			bdt.Status = MEMPROG_BUFFER_STATUS_FREE;
-//		}
-//		ReleaseToken();
-//	}
 };
