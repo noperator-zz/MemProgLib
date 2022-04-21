@@ -94,8 +94,21 @@ protected:
 #endif
 	}
 
+	static uint32_t CRC32(uint8_t *Data, uint32_t Length, uint32_t LastCRC= 0) {
+		int8_t i;
+		uint32_t Mask;
 
-
+		uint32_t CRC = ~LastCRC;
+		while (Length--) {
+			CRC = CRC ^ *Data;
+			Data++;
+			for (i = 7; i >= 0; i--) {
+				Mask = -(CRC & 1);
+				CRC = (CRC >> 1) ^ (0xEDB88320 & Mask);
+			}
+		}
+		return ~CRC;
+	}
 
 public:
 	virtual ~MemProg() = default;
@@ -120,11 +133,6 @@ public:
 	}
 
 	static void StaticRun() {
-		// TODO select which instance to run based on:
-		//  - whether it's active (has a command running)
-		//  - whether it's waiting for a free buffer (must be active for this to be true)
-		//  - which instance ran last time (don't run the same one twice if another command is active/waiting)
-
 		MemProg * inst;
 
 		// if we have the token
