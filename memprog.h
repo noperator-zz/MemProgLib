@@ -14,8 +14,8 @@ typedef enum __attribute__((__packed__)) {
 	// Set by the host to indicate to the target that params hold information about a new command
 	// The target will set it to ACK after copying necessary data from params
 	_MEMPROG_STATUS_START               = 0x01,
-	// Set by the target to indicate that a command has been received. This lets the host know that
-	// it can continue and set status back to IDLE
+	// Set by the target along with the interface number to indicate that a command has been received.
+	// This lets the host know that it can set status back to IDLE and start transferring data for this interface.
 	_MEMPROG_STATUS_ACK                 = 0x02,
 	// NOTE since only one side will ever see START or ACK, we could use the same value for both
 
