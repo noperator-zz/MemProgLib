@@ -42,12 +42,14 @@ typedef enum __attribute__((__packed__)) {
 
 // TODO how to read these from python?
 typedef enum __attribute__((__packed__)) {
+	// Mas erase: Erase the entire memory range covered by this interface, so that it can be re-programmed
 	// IN
 	//  None
 	// OUT
 	//  None
 	MEMPROG_CMD_MASS_ERASE              = 0x00,
 
+	// Erase range: Erase a particular range of memory covered by this interface, so that it can be re-programmed
 	// IN
 	//  P1: Start address
 	//  P2: Length
@@ -55,16 +57,31 @@ typedef enum __attribute__((__packed__)) {
 	//  None
 	MEMPROG_CMD_ERASE_RANGE             = 0x01,
 
+	// Program / Verify: Load data into the locations provided by the buffers. Return a CRC32 of all data programmed
 	// IN
 	//  Buffers: Data to program
 	// OUT
-	//  P1: CRC32 of all data read
+	//  P1: CRC32 of all data readback from mempry after programming
 	MEMPROG_CMD_PROG_VERIFY             = 0x10,
 
 
+	// CRC: Return a single CRC32 of the data in the locations provided by the buffers
+	// IN
+	//  Buffers: Addresses and lengths of sections to read and generate CRC from
+	// OUT
+	//  P1: CRC32 of all data read
+	MEMPROG_CMD_CRC                     = 0x40,
 
-	// As a convention, 'read' type commands start at 0x80
+	// Read: Fill the provided buffers with data read out of memory at the locations provided by the buffers
+	// IN
+	//  Buffers: Addresses and lengths of sections to read
+	// OUT
+	//  Buffers: Filled with data from the provided addresses
+	MEMPROG_CMD_READ                    = 0x50,
 
+
+	// Query capabilities: Used internally by the host to find addresses of the BDTs and buffers,
+	//  as well as the size and number of buffers, and the version of MemProgLib on the target
 	// IN
 	//  None
 	// OUT
@@ -72,19 +89,9 @@ typedef enum __attribute__((__packed__)) {
 	//	P1: bdt_base_address
 	//	P2: buffer_base_address
 	//	P3: (NumBuffers << 24) | BufferSize
-	MEMPROG_CMD_QUERY_CAP               = 0x80,
+	MEMPROG_CMD_QUERY_CAP               = 0x7F,
 
-	// IN
-	//  Buffers: Addresses and lengths of sections to read and generate CRC from
-	// OUT
-	//  P1: CRC32 of all data read
-	MEMPROG_CMD_CRC                     = 0x81,
-
-	// IN
-	//  Buffers: Addresses and lengths of sections to read
-	// OUT
-	//  Buffers: Filled with data from the provided addresses
-	MEMPROG_CMD_READ                    = 0x90,
+	// NOTE values >= 0x80 are reserved for custom commands
 } MEMPROG_CMD;
 
 typedef enum __attribute__((__packed__)) {
@@ -95,7 +102,9 @@ typedef enum __attribute__((__packed__)) {
 } MEMPROG_TOKEN;
 
 // FIXME struct packing is compiler defined. This is almost guaranteed to not work correctly on some combination
-//  of target / compiler. Should instead use `uint8_t Params[]` and have e.g. `void SetAddress(uint32_t Address) { Params[4] = Address & 0xFF, ...}`
+//  of target / compiler. Should instead use `uint8_t ParamBuffer[]` as the public mempry interface and have e.g.
+//  `void SetParam(MEMPROG_PARAM Param) { ParamBuffer[0] = Param.Token, ...}`
+//  `void GetParam(MEMPROG_PARAM &Param) { Param.Token = ParamBuffer[0], ...}`
 typedef struct __attribute__((__packed__)) {
 	MEMPROG_TOKEN Token: 8U;
 	MEMPROG_STATUS Status: 8U;

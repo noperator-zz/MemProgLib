@@ -15,28 +15,239 @@ receiving commands and handling incoming data buffers
 are responsible for moving data into the appropriate location and providing a return status
 
 
+## Terminology
+- Interface: A logical instance which can run commands concurrently with other interfaces. All interfaces
+  use the same parameter structure and buffers
+- Parameters: The command parameter structure, MEMPROG_PARAM. Alternatively, the fields with this structure
+  may be referred to as parameters
+- BDT: Buffer Descriptor Table, MEMPROG_BDT. Holds information about each data transfer buffer
+
+
 # Usage Guide
-TODO
-Host side...
-Target side...
-## Command Handlers
-TODO
+## Host Usage
+See https://pd-bitbucket.deltacontrols.com/projects/QAEP/repos/openocd/browse/README_MEMPROG.md for usage of the
+host implementation
+
+## Target Usage
+### Setup
+MemProgLib is set up on the target by providing definitions for the static variables declared at the top of the MemProg class
+Here is a minimal setup snippet:
+```c++
+#include "memprog.hpp"
+// Include the files where the MemProg subclasses are defined (See section on Interface Creation)
+#include "FLASHAlgorithm.h"
+#include "UPDIResource.h"
+#include "WIFIResource.h"
+
+// Define the number of buffers and the size of each buffer
+static constexpr uint32_t NUM_BUFFERS = 4;
+static constexpr uint32_t BUFFER_SIZE = 0x400;
+
+// Create the required MemProg data structures. Use a linker script to arrange the sections in memory as needed
+volatile MEMPROG_PARAM Programming::ALGO_PARAMS __attribute__ ((used, section(".algo_param")));
+volatile MEMPROG_BDT Programming::ALGO_BDT[NUM_BUFFERS] __attribute__ ((used, section(".algo_bdt")));
+volatile uint8_t Programming::ALGO_BUFFER[BUFFER_SIZE * NUM_BUFFERS] __attribute__ ((used, section(".algo_buffer")));
+
+// Define MemProg::Instances as an array of the MemProg subclasses, followed by a nullptr
+MemProg * const MemProg::Interfaces[] {
+        &FLASHAlgorithm::ALGO,
+        &UPDIResource::ALGO,
+        &WIFIResource::ALGO,
+        nullptr};
+
+// Define the rest of the MemProg variables as follows
+volatile MEMPROG_PARAM * const MemProg::Param = &Programming::ALGO_PARAMS;
+volatile MEMPROG_BDT * const MemProg::BufferDescriptors = Programming::ALGO_BDT;
+volatile uint8_t * const MemProg::Buffers = Programming::ALGO_BUFFER;
+const uint32_t MemProg::BufferSize = Programming::BUFFER_SIZE;
+const uint32_t MemProg::NumBuffers = Programming::NUM_BUFFERS;
+// A timekeeping function must be provided
+uint32_t (* const volatile MemProg::time_ms)() = &SYSTICK::GetTimeMS;
+
+// Define debugging functions as nullptr if not used
+void (* const MemProgDebugMixin::dset)(uint8_t, bool) = nullptr;
+void (* const MemProgDebugMixin::dputc)(uint8_t) = nullptr;
+```
+
+### Interface Creation
+The `MemProg` class in `memprog.hpp` acts as an abstract base class. It should not be used directly as it does not provide
+implementations for any command handlers.
+
+A new interface is created by subclassing `MemProg` and overriding the command handler stub functions and/or adding
+custom command handler functions. Here is a minimal example:
+```c++
+#include "memprog.hpp"
+
+// Create a subclass of MemProg for each interface
+class FLASHAlgorithm : public MemProg {
+// Inherit the Base class constructor
+using MemProg::MemProg;
+public:
+    void Init() override {
+        // Place any code that should be run one time when the MCU starts up
+    };
+
+    // A single static instance of this class must be created.
+    // For convenience, we declare the static instance to live inside the class itself.
+    // NOTE: Another source file must define the instance as `FLASHAlgorithm FLASHAlgorithm::ALGO;`
+    static FLASHAlgorithm ALGO;
+
+private:
+    void CMD_MASS_ERASE() override {
+        // Implement mass erase command handler. See the later section on command handlers
+    }
+
+    // Custom commands require overriding an additional function to provide the correct handler function
+    CMD_FUNC GetHandler(MEMPROG_CMD Command) override {
+        if ((int)Command == 123) {
+            return &FLASHAlgorithm::CustomHandler;
+        }
+        // return nullptr if no handler for this command is available
+        return nullptr;
+    }
+
+    void CustomHandler() {
+        // Implement a handler for a custom command
+    }
+};
+```
+
+### Command Handlers
+Command handler functions implement the logic to run a command. See `MEMPROG_STATUS` in `memprog.h` for descriptions
+of what each command is expected to do, and the parameters it receives and is expected to return.
+
+Command handlers communicate with the rest of MemProgLib through the `LocalParam` variable:
+ - When the command handler is first called, the structure contains a copy of the Parameters that were used to start the command
+ - The handler indicates completions by changing `LocalParam.Status` to a value >= `MEMPROG_STATUS_OK`
+ - Additionally, `LocalParam.Code` can be set in case of error to help narrow down the error location
+ - `LocalParam.P1 - P6 ` shall be set to a value as expected by the command before completion oh the handler
+
+Since MemProgLib typically runs alongside an existing application, command handlers should be designed to return
+as quickly as possible to avoid blocking the main application. Typically, this is achieved by implementing a
+state machine inside the command handler function. The state machine can be reset based on the value of `LocalParam`
+as shown in the following minimal example:
+```c++
+void FLASHAlgorithm::CMD_MASS_ERASE() {
+    static enum ERASE_STATE {
+        INIT,
+        WAIT,
+    } State = INIT;
+
+    // During the first execution, `LocalParam.Status` will equal `_MEMPROG_STATUS_START`
+    // This can be used to reset the state machine
+    if (LocalParam.Status == _MEMPROG_STATUS_START) {
+        State = INIT;
+    }
+
+    switch (State) {
+        case INIT: {
+            // Start erasing all blocks
+            FlashStartErase();
+
+            // A naive implementation would busy wait here until the erase is finished.
+            // A better, non-blocking approach is to move a different state which will check
+            // if the erase is finished
+            State = WAIT;
+
+            return;
+        }
+        case WAIT: {
+            // If the erase is still in progress, return
+            if (FlashBusy()) {
+                return;
+            }
+
+            // Set the return code and status
+            LocalParam.Code = FlashGetError();
+
+            if (LocalParam.Code) {
+                LocalParam.Status = MEMPROG_STATUS_ERR_OTHER;
+            } else {
+                LocalParam.Status = MEMPROG_STATUS_OK;
+            }
+            return;
+        }
+    }
+}
+```
+
+#### Buffer Usage
+Some commands send data from the host to the target via the buffers. Here is an example command handler which uses
+buffers in this manner:
+```c++
+void FLASHAlgorithm::CMD_PROG() {
+    static PROG_STATE {
+        INIT,
+        GET_BUFFER,
+        PROGRAM,
+    } State = INIT;
+
+    static int CurrentBufferIndex = -1;
+    static bool WasLastBuffer = false;
+
+    if (LocalParam.Status == _MEMPROG_STATUS_START) {
+        State = INIT;
+    }
+
+    switch (State) {
+        case INIT: {
+            State = GET_BUFFER;
+            return;
+        }
+        case GET_BUFFER: {
+            if (WasLastBuffer) {
+                // All data has been received. Move to another state, or return for this example
+                LocalParam.Status = MEMPROG_STATUS_OK;
+                return;
+            }
+
+            // Get the next buffer. `WasLastBuffer` will be set to true if this is the last buffer sent
+            // by the host
+            GetNextFullBuffer(&CurrentBufferIndex, &WasLastBuffer, &CurrentAddress, &CurrentBytesRemaining);
+            if (CurrentBufferIndex < 0) {
+                // not available yet. try again later
+                return;
+            }
+
+            State = PROGRAM;
+            return;
+        }
+        case PROGRAM: {
+            // Use the buffer data
+            uint8_8 * CurrentBuffer = GetBufferAddress(CurrentBufferIndex);
+            // ...
+
+            // Release the buffer so it can be refilled by the host
+            ReleaseBuffer(CurrentBufferIndex);
+            // Get the next buffer
+            State = GET_BUFFER;
+            return;
+        }
+    }
+}
+```
+
+Buffers can also be acquired and filled directly by the command handler, instead of being received from the host.
+
+TODO add an example of this usage
+
+### Integration with Application and Build System
+Since MemProgLib is a header only library, the build system only needs to be updated to add an include path for `memprog.hpp`
+
+Integrating MemProgLib to run alongside an existing application is simple:
+1. At startup, the application must call `MemProg::StaticInit()` one time
+2. Afterwards, `MemProg::StaticRun()` should be called as often as possible to run the MemProgLib logic
+
 
 # Protocol Description
-## Terminology
- - Interface: A logical instance which can run commands concurrently with other interfaces. All interfaces
-use the same parameter structure and buffers
- - Parameters: The command parameter structure, MEMPROG_PARAM. Alternatively, the fields with this structure
-may be referred to as parameters
- - BDT: Buffer Descriptor Table, MEMPROG_BDT. Holds information about each data transfer buffer
 
 ## Overview
-MemProgLib reserves a portion of the target MCU RAM to act as the command interface (known as the **param**eter structure). The host is able to initiate
+MemProgLib reserves a portion of the target MCU RAM to act as the command interface (known as the parameter structure). The host is able to initiate
 commands by modifying this memory, typically via a debug adapter connected with the SWD protocol. The target polls
 this memory to receive incoming commands, and writes a return status upon completion of the command.
 
 Another portion of target RAM is reserved for the data transfer buffers. Each buffer has an associated
-'buffer descriptor table' (**BDT**) which indicates the current owner and status of the buffer
+'buffer descriptor table' (BDT) which indicates the current owner and status of the buffer
 
 ## Memory Structure
 MEMPROG_PARAM: A single instance of this structure exists in memory
@@ -125,17 +336,19 @@ Either side may acquire and fill a buffer, so long as the BDT `Token` and `Statu
 | TARGET    | PENDING    | X             | Target interface X is filling the buffer                              | Target interface X has exclusive access. After filling the buffer, change `Status` to `FULL` and immediately pass the token |
 | TARGET    | FULL       | X             | Host interface X has just filled and passed this buffer to the target | Target interface X can read from the buffer, then change `Status` to `FREE`                                                 |
 
+BDTs contain a `Sequence` field to ensure buffers are received in the correct order in case several are sent from
+one side to the other at once. The sequence must be set as follows by the buffer transmitter:
+ - The first buffer transmitted after starting a command will have `Sequence = 0`
+ - Each subsequent buffer transmitted shall have `Sequence` incremented by one, up to 0x7F. After 0x7F, it shall roll back to 0
+ - The last buffer transmitted shall have `Sequence = 0x80`. This lets the other side know when all data has been transferred
+
 It is beneficial to use multiple buffers per interface to avoid unnecessary waiting: one can be written to by the host,
 while the other is being read out by the target.
 
-Host implementations should default to a maximum of two buffers per interface, to avoid hogging bandwidth that could
+Host implementations should default to a maximum of two buffers per interface, to avoid hogging buffers that could
 be used to run commands in parallel on other interfaces
 
 
-# Host Implementation
-The host interface is integrated into OpenOCD. For details, see https://pd-bitbucket.deltacontrols.com/projects/QAEP/repos/openocd/browse/README_MEMPROG.md
-
-# Target Implementation
-This repository contains the target implementation of MemProgLib
+# Target Implementation Notes
 TODO implementation notes / details
 
