@@ -25,8 +25,7 @@ are responsible for moving data into the appropriate location and providing a re
 
 # Usage Guide
 ## Host Usage
-See https://pd-bitbucket.deltacontrols.com/projects/QAEP/repos/openocd/browse/README_MEMPROG.md for usage of the
-host implementation
+See https://github.com/noperator-zz/openocd/blob/delta/README_MEMPROG.md for usage of the host implementation
 
 ## Target Usage
 ### Setup
